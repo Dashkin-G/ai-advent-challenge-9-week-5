@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Индекс документов</title>
+<style>
+  :root {
+    /* Приглушённый шалфейно-оливковый день, как на прошлой неделе: светлота площадей
+       56–65 %, текст почти чёрный — контраст выше 5:1. */
+    --bg: #9ca888; --panel: #a8b28d; --panel-soft: #a0ac86; --field: #aeb891;
+    --line: #808d6b; --divider: #36402f;
+    --text: #101508; --muted: #1b2413; --accent: #17351c; --accent-dark: #0e2713;
+    --bad: #611a15; --shadow: 0 1px 3px rgba(25,35,15,.18);
+    /* Шаги: идёт — синий, готово — оранжевый, ошибка — розовый (текст на них 7,7–8,9:1). */
+    --run: #92a9c4; --run-line: #2a4a6f;
+    --done: #d4a87d; --done-line: #764419;
+    --fail: #d1aba9;
+    /* Лучшее значение в сравнении и нужный пункт в выдаче (текст на них 9,8:1). */
+    --win: #bcc99c; --mark: #e2c98f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 20.5px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 1780px; margin: 0 auto; padding: 18px 24px 48px; display: flex; flex-direction: column; gap: 16px; }
+
+  button {
+    font: inherit; font-size: 19px; cursor: pointer; border-radius: 10px; padding: 10px 17px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); transition: .12s;
+    box-shadow: var(--shadow);
+  }
+  button:hover:not(:disabled) { border-color: var(--divider); background: var(--panel-soft); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
+  button.small { font-size: 17px; padding: 6px 12px; }
+  button:disabled { opacity: .4; cursor: default; }
+  input {
+    font: inherit; background: var(--field); color: var(--text);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  ::placeholder { color: var(--muted); opacity: .85; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  code { font: .88em ui-monospace, Consolas, monospace; }
+  .muted { color: var(--muted); }
+  .en { color: var(--muted); font-size: 16.5px; font-weight: 500; font-style: italic; }
+  .label { color: var(--muted); font-size: 15.5px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; }
+
+  header.top { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+  header.top h1 { margin: 0; font-size: 27.5px; font-weight: 680; }
+  header.top .sub { color: var(--muted); font-size: 18.5px; margin-top: 2px; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow); }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .card-title { font-size: 23px; font-weight: 680; }
+  .card-sub { color: var(--muted); font-size: 18.5px; margin-top: 4px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 1200px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* ---------- пайплайн: пять шагов в ряд ---------- */
+  .stages { display: flex; align-items: stretch; gap: 6px; }
+  .stage {
+    flex: 1 1 0; min-width: 0; padding: 10px 14px 11px; border-radius: 12px;
+    background: var(--field); border: 2px dashed var(--line); line-height: 1.35;
+    transition: background-color .4s ease, border-color .4s ease;
+  }
+  .stage-head { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; overflow: hidden; }
+  .stage-n { font-size: 17px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .stage-title { font-size: 20.5px; font-weight: 680; }
+  .stage-note { font-size: 18px; margin-top: 4px; min-height: 2.7em; overflow-wrap: anywhere; }
+  .stage-bar { height: 6px; border-radius: 3px; background: rgba(16,21,8,.15); margin-top: 6px; overflow: hidden; visibility: hidden; }
+  .stage-bar i { display: block; height: 100%; width: 0; background: var(--run-line); transition: width .3s ease; }
+  .stage.run { background: var(--run); border: 2px solid var(--run-line); animation: pulse 1.4s ease-in-out infinite; }
+  .stage.run .stage-bar { visibility: visible; }
+  .stage.done { background: var(--done); border: 2px solid var(--done-line); }
+  .stage.error { background: var(--fail); border: 2px solid var(--bad); }
+  .stage.error .stage-note { color: var(--bad); font-weight: 600; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(42,74,111,.3); } }
+  .arrow { flex: none; align-self: center; font-size: 24px; color: var(--muted); opacity: .45; transition: color .4s ease; }
+  .arrow.flow { color: var(--run-line); opacity: 1; }
+  .arrow.ok { color: var(--done-line); opacity: 1; }
+  .run-line { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  #status { font-size: 19.5px; }
+  #status.bad { color: var(--bad); font-weight: 600; }
+
+  /* ---------- документ и файлы ---------- */
+  .facts { display: flex; gap: 28px; flex-wrap: wrap; margin: 12px 0 6px; }
+  .fact b { display: block; font-size: 27px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .fact span { color: var(--muted); font-size: 17.5px; }
+  .rows { margin-top: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 19px; }
+  .row:first-child { border-top: none; }
+  .row .num { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .file { font-family: ui-monospace, Consolas, monospace; font-size: 18.5px; }
+  .links { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .empty { color: var(--muted); padding: 6px 0; }
+
+  /* ---------- сравнение ---------- */
+  table.cmp { width: 100%; border-collapse: collapse; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  table.cmp th { text-align: left; font-size: 21px; padding: 8px 14px; vertical-align: bottom; }
+  table.cmp th:first-child { width: 26%; }
+  table.cmp td { padding: 9px 14px; border-top: 1px solid var(--line); vertical-align: middle; }
+  table.cmp td:first-child { color: var(--muted); }
+  table.cmp td.win { background: var(--win); font-weight: 700; box-shadow: inset 4px 0 0 var(--accent); }
+  table.cmp tr.group td { color: var(--text); font-weight: 680; padding-top: 18px; border-top: 2px solid var(--line); }
+  table.cmp tr.key td { font-size: 22.5px; }
+  .hist { display: flex; align-items: flex-end; gap: 2px; height: 46px; }
+  .hist i { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
+  .hist-axis { display: flex; justify-content: space-between; font-size: 15px; color: var(--muted); margin-top: 2px; }
+  .verdict { margin-top: 14px; padding: 12px 16px; border-radius: 10px; background: var(--panel-soft);
+             border-left: 6px solid var(--accent); font-size: 20.5px; }
+  details.how { margin-top: 12px; }
+  details.how summary { cursor: pointer; color: var(--muted); font-size: 18px; }
+  details.how ul { margin: 8px 0 0; padding-left: 22px; font-size: 18.5px; }
+  details.how li { margin: 4px 0; }
+
+  /* ---------- поиск ---------- */
+  .search-row { display: flex; gap: 10px; margin-top: 12px; }
+  .search-row input { flex: 1; font-size: 20.5px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .chip {
+    background: transparent; border: 1px dashed var(--line); color: var(--muted); box-shadow: none;
+    border-radius: 999px; padding: 6px 14px; font-size: 18px; text-align: left;
+  }
+  .chip:hover:not(:disabled) { color: var(--text); border-style: solid; background: transparent; }
+  .golden { margin-top: 14px; padding: 12px 16px; border-radius: 10px; background: var(--panel-soft); border-left: 6px solid var(--done-line); }
+  .golden-text { margin-top: 6px; font-size: 18.5px; white-space: pre-wrap; max-height: 7.5em; overflow: hidden; }
+  .results { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+  .col-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+  .col-head b { font-size: 21px; }
+  .col-verdict { margin-left: auto; font-weight: 650; }
+  .col-verdict.ok { color: var(--accent); }
+  .col-verdict.bad { color: var(--bad); }
+  .hit { padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
+  .hit-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 18px; }
+  .rank { font-weight: 700; font-size: 20px; min-width: 1.4em; }
+  .score { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .where { color: var(--muted); flex: 1; min-width: 0; }
+  .tag { border-radius: 7px; padding: 0 9px; font-size: 16.5px; font-weight: 650; white-space: nowrap; }
+  .tag.ok { background: var(--accent); color: #f3f6ec; }
+  .hit-text { margin-top: 6px; white-space: pre-wrap; font-size: 19px; cursor: pointer; }
+  .hit-text.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .hit.relevant .hit-text { border-left: 4px solid var(--accent); padding-left: 10px; }
+  mark { background: var(--mark); color: inherit; border-radius: 3px; }
+  .cut { color: var(--bad); font-weight: 700; }
+  .meta-toggle { font-size: 16.5px; color: var(--accent); cursor: pointer; margin-top: 4px; display: inline-block; user-select: none; }
+  pre.meta {
+    margin: 6px 0 0; padding: 10px 12px; background: var(--field); border: 1px solid var(--line); border-radius: 8px;
+    font: 16.5px/1.5 ui-monospace, Consolas, monospace; color: var(--accent); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .search-info { color: var(--muted); font-size: 17.5px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <div>
+      <h1>Индекс документов для RAG</h1>
+      <div class="sub">ПДД РФ → чанки двумя способами → эмбеддинги bge-m3 → FAISS + SQLite → проверка поиска на вопросах билетов</div>
+    </div>
+    <button id="build" class="primary">Построить индекс</button>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="card-title">Пайплайн индексации</div>
+    </div>
+    <div class="stages" id="stages" style="margin-top:12px"></div>
+    <div class="run-line"><div id="status" class="muted">—</div></div>
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">Документ</div>
+        <button id="redownload" class="small" title="Скачать правила и билеты заново и пересобрать индекс">Скачать заново</button>
+      </div>
+      <div id="docs"><div class="empty">Документы ещё не скачаны.</div></div>
+    </section>
+    <section class="card">
+      <div class="card-head"><div class="card-title">Индекс на диске</div></div>
+      <div id="files"><div class="empty">Индекса ещё нет.</div></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="card-title">Сравнение стратегий нарезки <span class="en">chunking</span></div>
+    </div>
+    <div id="compare"><div class="empty">Появится после первой сборки индекса.</div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="card-title">Проверить поиск</div>
+      <div class="card-sub">вопрос → эмбеддинг → 5 ближайших чанков в каждом индексе</div>
+    </div>
+    <div class="search-row">
+      <input id="query" placeholder="Спросите о правилах, например: где запрещён обгон?" />
+      <button id="find" class="primary">Найти</button>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div id="found"></div>
+  </section>
+
+</div>
+<script>
+const STEPS = {
+  docs:   {title: 'Документы', idle: 'garant.ru + билеты → текст и эталон'},
+  chunks: {title: 'Нарезка', idle: 'текст → чанки двумя способами'},
+  embed:  {title: 'Эмбеддинги', idle: 'чанки → векторы bge-m3'},
+  index:  {title: 'Индекс', idle: 'векторы → FAISS, текст → SQLite'},
+  eval:   {title: 'Проверка', idle: 'вопросы билетов → метрики'},
+};
+const EN = {fixed: 'fixed-size', structure: 'structure-based'};
+let S = null, O = null, Q = [], rev = -1, chipsFrom = 0;
+const params = new URLSearchParams(location.search);
+let pending = params.get('q') || params.get('question') ? {q: params.get('q'), id: params.get('question')} : null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const fmt = n => Number(n).toLocaleString('ru-RU');
+const pct = n => fmt(n) + ' %';
+const mb = b => (b / 1048576).toLocaleString('ru-RU', {maximumFractionDigits: 1}) + ' МБ';
+function plural(n, one, few, many) {       // 1 пункт, 2 пункта, 5 пунктов
+  const tail = Math.abs(n) % 100;
+  return tail > 10 && tail < 20 ? many : tail % 10 === 1 ? one : tail % 10 >= 2 && tail % 10 <= 4 ? few : many;
+}
+const nw = (n, ...forms) => `${fmt(n)} ${plural(n, ...forms)}`;
+const W = {                                 // слово и его формы для nw()
+  chars: ['знак', 'знака', 'знаков'], tokens: ['токен', 'токена', 'токенов'], units: ['пункт', 'пункта', 'пунктов'],
+  questions: ['вопрос', 'вопроса', 'вопросов'], gold: ['вопрос-эталон', 'вопроса-эталона', 'вопросов-эталонов'],
+  vectors: ['вектор', 'вектора', 'векторов'], chunks: ['чанк', 'чанка', 'чанков'],
+};
+function dur(sec) {
+  if (sec < 10) return Math.max(0, sec).toLocaleString('ru-RU', {maximumFractionDigits: 1}) + ' с';
+  sec = Math.round(sec);
+  return sec < 60 ? `${sec} с` : `${Math.floor(sec / 60)} мин ${sec % 60} с`;
+}
+function when(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+}
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `ошибка ${r.status}`);
+  return data;
+}
+
+// ---------- опрос состояния ----------
+async function poll() {
+  try {
+    S = await api('/api/state');
+    if (S.revision !== rev || !O) {
+      const before = reportStamp();
+      O = await api('/api/overview');
+      if (O.report && reportStamp() !== before) Q = await api('/api/questions');   // список вопросов — только с новым отчётом
+      rev = S.revision;
+      render();
+    }
+    renderStatus();
+  } catch (e) {
+    $('status').textContent = 'Нет связи с приложением: ' + e.message;
+    $('status').className = 'bad';
+  }
+  setTimeout(poll, S && S.running ? 300 : 1200);
+}
+
+const reportStamp = () => O && O.report ? Object.values(O.report.strategies)[0].build.built : null;
+
+function render() {
+  renderStages();
+  renderDocs();
+  renderFiles();
+  renderCompare();
+  renderChips();
+  const running = S.running;
+  $('build').disabled = running;
+  $('redownload').disabled = running;
+  $('redownload').hidden = !O.downloaded;
+  $('build').textContent = running ? 'Идёт сборка…'
+    : !O.downloaded ? 'Скачать и построить' : O.report ? 'Пересобрать индекс' : 'Построить индекс';
+  if (pending && O.report) {          // ссылка вида /?q=где запрещён обгон или /?question=<id>
+    const q = pending.id && Q.find(x => x.id === pending.id);
+    $('query').value = q ? q.question : pending.q || '';
+    find(q ? {question_id: q.id} : {query: $('query').value});
+    pending = null;
+  }
+}
+
+// ---------- пайплайн ----------
+function idleNotes() {
+  // После перезапуска приложения шаги пустые — показываем то, что уже лежит на диске.
+  const d = O.docs, r = O.report, notes = {};
+  if (d) notes.docs = `${fmt(d.pages)} стр. · ${nw(d.questions, ...W.gold)}`;
+  if (r) {
+    const st = r.strategies, b = Object.values(st).map(s => s.build);
+    notes.chunks = Object.values(st).map(s => `${s.title.toLowerCase()}: ${s.shape.chunks}`).join(' · ');
+    notes.embed = `${nw(b.reduce((a, x) => a + (x.chunks || 0), 0), ...W.vectors)} × ${b[0].dim}`;
+    notes.index = 'FAISS × 2 + SQLite';
+    notes.eval = `${nw(r.questions_total, ...W.questions)} × 2 стратегии`;
+  }
+  return notes;
+}
+
+function renderStages() {
+  const box = $('stages');
+  if (!box.children.length) {
+    // Карточки создаются один раз и дальше меняют только класс и текст — иначе не будет плавного перехода цвета.
+    Object.entries(STEPS).forEach(([key, s], i) => {
+      if (i) box.insertAdjacentHTML('beforeend', `<div class="arrow" data-to="${key}">→</div>`);
+      box.insertAdjacentHTML('beforeend', `
+        <div class="stage" id="st-${key}">
+          <div class="stage-head"><span class="stage-n">${i + 1}</span><span class="stage-title">${s.title}</span></div>
+          <div class="stage-note"></div>
+          <div class="stage-bar"><i></i></div>
+        </div>`);
+    });
+  }
+  const fresh = Object.values(S.steps).every(s => s.status === 'wait') && !S.running;
+  const notes = idleNotes();
+  for (const [key, info] of Object.entries(STEPS)) {
+    let {status, note, progress} = S.steps[key];
+    if (fresh) { status = notes[key] ? 'done' : 'wait'; note = notes[key] || ''; }
+    const el = $('st-' + key);
+    el.className = 'stage ' + (status === 'wait' ? '' : status);
+    el.querySelector('.stage-note').textContent = note || (status === 'run' ? 'идёт…' : info.idle);
+    el.querySelector('.stage-bar i').style.width = progress ? (100 * progress[0] / progress[1]) + '%' : '0';
+    const arrow = box.querySelector(`.arrow[data-to="${key}"]`);
+    if (arrow) arrow.className = 'arrow ' + (status === 'run' ? 'flow' : status === 'done' ? 'ok' : '');
+  }
+}
+
+function renderStatus() {
+  const el = $('status');
+  el.className = '';
+  if (S.running) {
+    const step = Object.entries(S.steps).find(([, s]) => s.status === 'run');
+    el.textContent = `Идёт: ${step ? STEPS[step[0]].title.toLowerCase() : 'подготовка'} · ${dur(Date.now() / 1000 - S.started)}`;
+  } else if (S.error) {
+    el.textContent = 'Остановилось — ' + S.error;
+    el.className = 'bad';
+  } else if (S.finished) {
+    el.textContent = `Готово за ${dur(S.finished - S.started)}. Сравнение и поиск — ниже.`;
+  } else if (O && O.report) {
+    const built = Object.values(O.report.strategies)[0].build.built;
+    el.textContent = `Индекс собран ${when(built)}. Сравнение и поиск — ниже.`;
+  } else {
+    el.className = 'muted';
+    el.textContent = 'Индекса ещё нет. Сборка скачает правила и билеты, нарежет текст и посчитает эмбеддинги на процессоре — первый раз около трёх минут.';
+  }
+}
+
+// ---------- документ и файлы ----------
+function renderDocs() {
+  const d = O.docs;
+  if (!d) { $('docs').innerHTML = '<div class="empty">Документы ещё не скачаны — сборка начнёт с них.</div>'; return; }
+  const host = d.source.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  $('docs').innerHTML = `
+    <div class="card-sub">Правила дорожного движения РФ с приложениями · <a href="${esc(d.source)}" target="_blank">${esc(host)}</a>
+      · изменения по ${esc(d.edition)} · скачано ${when(d.fetched)}</div>
+    <div class="facts">
+      <div class="fact"><b>${fmt(d.pages)}</b><span>${plural(d.pages, 'страница', 'страницы', 'страниц')} (${nw(d.chars, ...W.chars)})</span></div>
+      <div class="fact"><b>${d.sections}</b><span>${plural(d.sections, 'раздел', 'раздела', 'разделов')}</span></div>
+      <div class="fact"><b>${d.units}</b><span>${plural(d.units, ...W.units)}</span></div>
+      <div class="fact"><b>${d.questions}</b><span>${plural(d.questions, ...W.gold)} из ${d.tickets}</span></div>
+    </div>
+    <div class="rows">${d.parts.map(p => `
+      <div class="row"><span>${esc(p.title)}</span><span class="num">${nw(p.units, ...W.units)} · ${fmt(Math.round(p.chars / 1800))} стр.</span></div>`).join('')}
+    </div>
+    <div class="links">
+      <a href="/api/doc" target="_blank">Открыть очищенный текст ↗</a>
+      <span class="muted" style="font-size:17.5px">примечания Гаранта и история изменений убраны</span>
+    </div>`;
+}
+
+function renderFiles() {
+  const r = O.report, c = O.config;
+  if (!O.files.length || !r) { $('files').innerHTML = '<div class="empty">Индекса ещё нет.</div>'; return; }
+  const b = Object.values(r.strategies)[0].build;
+  const about = {'fixed.faiss': 'векторы, фиксированный размер', 'structure.faiss': 'векторы, по структуре',
+                 'index.db': 'SQLite: чанки, метаданные, кэш эмбеддингов'};
+  $('files').innerHTML = `
+    <div class="card-sub">модель <code>${esc(c.model)}</code> · ${b.dim} измерений · ${esc(c.dtype)} · на процессоре</div>
+    <div class="rows" style="margin-top:12px">${O.files.map(f => `
+      <div class="row"><span><span class="file">data/index/${esc(f.name)}</span> <span class="muted">— ${about[f.name] || ''}</span></span>
+      <span class="num">${mb(f.bytes)}</span></div>`).join('')}
+    </div>
+    <div class="card-sub" style="margin-top:10px">У каждого чанка: <code>chunk_id</code> · <code>source</code> · <code>title</code> ·
+      <code>section</code> · <code>points</code> · <code>start</code>/<code>end</code> · <code>chars</code> · <code>tokens</code></div>`;
+}
+
+// ---------- сравнение ----------
+function hist(sizes) {
+  const top = Math.max(1500, ...sizes), bins = new Array(15).fill(0);
+  sizes.forEach(s => bins[Math.min(14, Math.floor(s / (top / 15)))]++);
+  const max = Math.max(...bins);
+  return `<div class="hist">${bins.map(n => `<i style="height:${n ? Math.max(4, 100 * n / max) : 0}%" title="${n}"></i>`).join('')}</div>
+          <div class="hist-axis"><span>0</span><span>${fmt(Math.round(top / 2))}</span><span>${fmt(top)} знаков</span></div>`;
+}
+
+function renderCompare() {
+  const r = O.report;
+  if (!r) { $('compare').innerHTML = '<div class="empty">Появится после первой сборки индекса.</div>'; return; }
+  const keys = Object.keys(r.strategies), st = r.strategies, c = O.config;
+  const how = {fixed: `окно ${nw(c.size, ...W.chars)}, перекрытие ${c.overlap}; режет где придётся`,
+               structure: `по границам пунктов, до ${fmt(c.size)} знаков; раздел не пересекает`};
+  const rows = [
+    ['Как режет', k => how[k]],
+    ['Чанков', k => fmt(st[k].shape.chunks)],
+    ['Средний размер', k => `${nw(st[k].shape.chars_avg, ...W.chars)} ≈ ${nw(st[k].shape.tokens_avg, ...W.tokens)}`],
+    ['Разброс размеров', k => hist(st[k].shape.sizes)],
+    ['Разрезано пунктов', k => `${st[k].shape.cut_units} (${pct(st[k].shape.cut_units_pct)})`, k => st[k].shape.cut_units, 'low'],
+    ['Чанков на стыке разделов', k => `${st[k].shape.cross_sections} (${pct(st[k].shape.cross_sections_pct)})`, k => st[k].shape.cross_sections, 'low'],
+    [`Поиск: ${nw(r.questions_total, ...W.questions)} из билетов, в выдаче первые ${nw(r.top, ...W.chunks)}`],
+    ['Нужный пункт — первым', k => pct(st[k].search.hit1), k => st[k].search.hit1, 'high', 'key'],
+    [`Нужный пункт — в первых ${r.top}`, k => pct(st[k].search['hit' + r.top]), k => st[k].search['hit' + r.top], 'high', 'key'],
+    [`Какая часть пункта попала в ${nw(r.top, ...W.chunks)}`, k => pct(st[k].search.coverage), k => st[k].search.coverage, 'high'],
+    [`Объём ${r.top} чанков для модели`, k => nw(st[k].search.context, ...W.chars), k => st[k].search.context, 'low'],
+    ['MRR@10', k => st[k].search.mrr.toLocaleString('ru-RU'), k => st[k].search.mrr, 'high'],
+  ];
+  const body = rows.map(([label, show, val, better, cls]) => {
+    if (!show) return `<tr class="group"><td colspan="3">${label}</td></tr>`;
+    const v = val ? keys.map(val) : null;
+    const best = v && v[0] !== v[1] ? (better === 'high' ? Math.max(...v) : Math.min(...v)) : null;
+    return `<tr class="${cls || ''}"><td>${label}</td>${keys.map((k, i) =>
+      `<td class="${best !== null && v[i] === best ? 'win' : ''}">${show(k)}</td>`).join('')}</tr>`;
+  }).join('');
+  $('compare').innerHTML = `
+    <table class="cmp">
+      <thead><tr><th></th>${keys.map(k => `<th>${esc(st[k].title)} <span class="en">${EN[k]}</span></th>`).join('')}</tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+    <div class="verdict">${verdict(r)}</div>
+    <details class="how"><summary>Как считали</summary><ul>
+      <li><b>Нужный пункт</b> — тот, на который ссылается подсказка к вопросу билета. Чанк считается нужным, если совпадает с пунктом хотя бы наполовину меньшего из двух.</li>
+      <li><b>Первым / в первых ${r.top}</b> — доля вопросов, где нужный чанк стоит первым / среди первых ${r.top} по косинусной близости.</li>
+      <li><b>Какая часть пункта</b> — сколько текста нужного пункта вместе попало в ${r.top} чанков: обрезанный пункт модель увидит не целиком.</li>
+      <li><b>Объём</b> — сколько знаков ${r.top} чанков займут в контексте модели.</li>
+      <li><b>MRR@10</b> — среднее 1/место первого нужного чанка (0, если в первых 10 его нет).</li>
+      <li><b>p</b> — вероятность получить такой перевес случайно, если на самом деле стратегии равны: считается по вопросам,
+        где они разошлись (точный тест Макнемара). Меньше 0,05 — разница не случайна.</li>
+      <li>Размер чанка у обеих стратегий общий — сравнивается способ нарезки, а не размер.</li>
+    </ul></details>`;
+}
+
+const pv = p => p < 0.001 ? 'p < 0,001' : 'p = ' + p.toLocaleString('ru-RU', {maximumFractionDigits: 3});
+const chance = pp => pp.p < 0.05 ? `не случайность, ${pv(pp.p)}` : `может быть случайностью, ${pv(pp.p)}`;
+
+function verdict(r) {
+  // Лидер — по «нужный пункт первым»; перевес проверяем на вопросах, где стратегии разошлись.
+  const ks = Object.keys(r.strategies), st = r.strategies, top = 'hit' + r.top;
+  const i = st[ks[0]].search.hit1 >= st[ks[1]].search.hit1 ? 0 : 1;
+  const A = st[ks[i]], B = st[ks[1 - i]], p1 = r.paired.hit1, p5 = r.paired[top];
+  const ctx = Math.round(100 * (1 - A.search.context / B.search.context));
+  return `<div><b>${esc(A.title)}</b> ставит нужный пункт первым в ${pct(A.search.hit1)} вопросов против ${pct(B.search.hit1)}:
+      из ${nw(p1.only[0] + p1.only[1], 'вопроса', 'вопросов', 'вопросов')}, где стратегии разошлись, ${p1.only[i]} — за ней (${chance(p1)}).</div>
+    <div style="margin-top:4px">В первых ${r.top} — ${pct(A.search[top])} против ${pct(B.search[top])} (${chance(p5)}).
+      Контекст для модели ${ctx >= 0 ? 'короче' : 'длиннее'} на ${Math.abs(ctx)} %, пунктов разрезано ${A.shape.cut_units} против ${B.shape.cut_units}.</div>`;
+}
+
+// ---------- поиск ----------
+function renderChips() {
+  const box = $('chips');
+  if (!Q.length) { box.innerHTML = ''; return; }
+  // Вопросы, где стратегии разошлись: одна нашла нужный пункт первым, другая — нет.
+  // Сильнее разошлись — раньше; «не нашла в первых 10» считаем 11-м местом.
+  const gap = q => Math.abs((q.rank.fixed || 11) - (q.rank.structure || 11));
+  const diff = Q.filter(q => (q.rank.fixed === 1) !== (q.rank.structure === 1)).sort((a, b) => gap(b) - gap(a));
+  const pool = diff.length ? diff : Q;
+  const pick = [0, 1, 2].map(i => pool[(chipsFrom + i) % pool.length]);
+  box.innerHTML = `<span class="label">${diff.length ? 'где стратегии разошлись' : 'вопросы билетов'}</span>` +
+    pick.map(q => `<button class="chip" data-id="${q.id}">${esc(q.question)}</button>`).join('') +
+    `<button class="chip" id="more-chips" title="другие вопросы">ещё ↻</button>`;
+  box.querySelectorAll('[data-id]').forEach(b => b.onclick = () => {
+    const q = Q.find(x => x.id === b.dataset.id);
+    $('query').value = q.question;
+    find({question_id: q.id});
+  });
+  $('more-chips').onclick = () => { chipsFrom += 3; renderChips(); };
+}
+
+async function find(body) {
+  if (!body.question_id && !body.query.trim()) return;
+  $('find').disabled = true;
+  $('found').innerHTML = `<div class="search-info">${O && S && !S.model_loaded ? 'Загружаю модель эмбеддингов (разово, ~15 с)…' : 'Ищу…'}</div>`;
+  try {
+    showFound(await api('/api/search', body));
+  } catch (e) {
+    $('found').innerHTML = `<div class="search-info" style="color:var(--bad)">${esc(e.message)}</div>`;
+  } finally {
+    $('find').disabled = false;
+  }
+}
+
+function showFound(res) {
+  const q = res.question;
+  const golden = q ? `
+    <div class="golden">
+      <div><span class="label">эталон</span> ${esc(q.ticket)}, вопрос ${q.n} · ответ в тексте: <b>${q.golden.map(g => esc(g.label)).join('; ')}</b></div>
+      <div class="golden-text">${esc(q.golden.map(g => g.text).join('\n').replace(/\n\n/g, '\n'))}</div>
+    </div>` : '';
+  const cols = Object.entries(res.results).map(([k, hits]) => {
+    let verdictHtml = '';
+    if (q) {
+      const first = hits.find(h => h.relevant);
+      verdictHtml = first ? `<span class="col-verdict ok">нужный пункт — ${first.rank}-й</span>`
+                          : `<span class="col-verdict bad">нужного пункта в первых ${hits.length} нет</span>`;
+    }
+    return `<div>
+      <div class="col-head"><b>${esc(O.strategies[k])}</b><span class="en">${EN[k]}</span>${verdictHtml}</div>
+      ${hits.map(h => hitHtml(h, !!q)).join('')}
+    </div>`;
+  }).join('');
+  $('found').innerHTML = golden + `<div class="results">${cols}</div>` +
+    `<div class="search-info">Запрос: «${esc(res.query)}» · эмбеддинг и поиск в двух индексах — ${res.ms} мс</div>`;
+  $('found').querySelectorAll('.hit-text').forEach(t => t.onclick = () => t.classList.toggle('clamp'));
+  $('found').querySelectorAll('.meta-toggle').forEach(t => t.onclick = () => {
+    const pre = t.nextElementSibling;
+    pre.hidden = !pre.hidden;
+    t.textContent = pre.hidden ? 'метаданные ▸' : 'метаданные ▾';
+  });
+}
+
+function points(list) {
+  if (!list.length) return '';
+  return 'п. ' + (list.length <= 4 ? list.join(', ') : list.slice(0, 3).join(', ') + ` … ещё ${list.length - 3}`);
+}
+
+function marked(text, marks) {
+  // Подсветка того, где в чанке лежит эталонный пункт; позиции — относительно начала чанка.
+  const spans = (marks || []).slice().sort((a, b) => a[0] - b[0]);
+  let out = '', pos = 0;
+  for (const [a, b] of spans) {
+    if (b <= pos) continue;
+    out += esc(text.slice(pos, Math.max(a, pos))) + '<mark>' + esc(text.slice(Math.max(a, pos), b)) + '</mark>';
+    pos = b;
+  }
+  return (out + esc(text.slice(pos))).replace(/\n\n/g, '\n');
+}
+
+function hitHtml(h, judged) {
+  const meta = {chunk_id: h.chunk_id, strategy: h.strategy, source: h.source, title: h.title, section: h.section,
+                points: h.points, start: h.start, end: h.end, chars: h.chars, tokens: h.tokens, score: h.score};
+  const clamp = judged ? !h.relevant : true;
+  const where = [points(h.points), h.section].filter(Boolean).join(' · ');
+  return `<div class="hit ${h.relevant ? 'relevant' : ''}">
+    <div class="hit-head">
+      <span class="rank">${h.rank}</span>
+      <span class="score" title="косинусная близость">${h.score.toLocaleString('ru-RU', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</span>
+      <span class="where">${esc(where)}</span>
+      ${h.relevant ? '<span class="tag ok">✓ нужный пункт</span>' : ''}
+    </div>
+    <div class="hit-text ${clamp ? 'clamp' : ''}" title="щёлкните, чтобы развернуть или свернуть">${h.cut_start ? '<span class="cut" title="чанк начинается посреди абзаца">…</span>' : ''}${marked(h.text, h.marks)}${h.cut_end ? '<span class="cut" title="чанк обрывается посреди абзаца">…</span>' : ''}</div>
+    <span class="meta-toggle">метаданные ▸</span>
+    <pre class="meta" hidden>${esc(JSON.stringify(meta, null, 1))}</pre>
+  </div>`;
+}
+
+// ---------- кнопки ----------
+async function build(download) {
+  try {
+    S = await api('/api/build', {download});
+    rev = -1;
+    render();
+  } catch (e) {
+    $('status').textContent = e.message;
+    $('status').className = 'bad';
+  }
+}
+$('build').onclick = () => build(false);
+$('redownload').onclick = () => build(true);
+$('find').onclick = () => find({query: $('query').value});
+$('query').onkeydown = e => { if (e.key === 'Enter') find({query: $('query').value}); };
+
+poll();
+</script>
+</body>
+</html>
