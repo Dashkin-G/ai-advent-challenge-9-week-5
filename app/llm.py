@@ -27,12 +27,15 @@ def _detail(response: httpx.Response) -> str:
         return response.text[:300]
 
 
-def stream(messages: list[dict]) -> Iterator[tuple[str, object]]:
-    """Ответ модели по кусочкам: ("think", текст), ("text", текст), в конце ("usage", {...})."""
+def stream(messages: list[dict], budget: int | None = None) -> Iterator[tuple[str, object]]:
+    """Ответ модели по кусочкам: ("think", текст), ("text", текст), в конце ("usage", {...}).
+    budget — сколько токенов модели можно думать; выключить размышления у qwen3.8 нельзя."""
     if not config.DASHSCOPE_API_KEY:
         raise LLMError("нет ключа модели: впишите DASHSCOPE_API_KEY в .env")
     body = {"model": config.LLM_MODEL, "messages": messages, "stream": True,
             "stream_options": {"include_usage": True}}
+    if budget is not None:
+        body["thinking_budget"] = budget
     headers = {"Authorization": f"Bearer {config.DASHSCOPE_API_KEY}"}
     try:
         with httpx.stream("POST", f"{config.DASHSCOPE_BASE_URL}/chat/completions", json=body,

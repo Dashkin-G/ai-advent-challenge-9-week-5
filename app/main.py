@@ -1,4 +1,4 @@
-"""HTTP: интерфейс и API. Логика — в pipeline и rag, здесь только склейка."""
+"""HTTP: интерфейс и API. Логика — в pipeline, rag и rerank, здесь только склейка."""
 import asyncio
 import json
 import threading
@@ -8,18 +8,23 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from . import chunking, config, corpus, index, pipeline, rag
+from . import chunking, config, corpus, index, pipeline, rag, rerank
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
 
+def _warm() -> None:
+    index.model()
+    rerank.model()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Индекс уже собран — модель поднимаем заранее, чтобы первый поиск не ждал 15 секунд.
+    # Индекс уже собран — модели поднимаем заранее, чтобы первый вопрос не ждал 20 секунд.
     if index.builds():
-        threading.Thread(target=index.model, daemon=True).start()
+        threading.Thread(target=_warm, daemon=True).start()
     yield
 
 
@@ -39,6 +44,12 @@ class Ask(BaseModel):
     question: str = ""
 
 
+class Settings(BaseModel):
+    candidates: int = Field(ge=1, le=config.CANDIDATES)
+    threshold: float = Field(ge=0, le=1)
+    top: int = Field(ge=1, le=10)
+
+
 @app.get("/")
 def page():
     return FileResponse(STATIC / "index.html")
@@ -46,8 +57,8 @@ def page():
 
 @app.get("/api/state")
 def state():
-    """Лёгкое состояние для частого опроса: шаги пайплайна, прогон контрольных вопросов, ревизии."""
-    return {**pipeline.state(), "model_loaded": index.loaded(), "control": rag.state()}
+    """Лёгкое состояние для частого опроса: шаги пайплайна, прогоны проверок, ревизии."""
+    return {**pipeline.state(), "model_loaded": index.loaded(), "control": rag.state(), "rerank": rerank.state()}
 
 
 @app.get("/api/overview")
@@ -98,8 +109,8 @@ def _ready_for_answers() -> None:
 
 
 async def _both_modes(question: str):
-    """Оба режима параллельно, каждый в своём потоке (поиск и HTTP-клиент синхронные);
-    события уходят строками JSON по мере прихода — ответы печатаются на глазах."""
+    """RAG и RAG + фильтр параллельно, каждый в своём потоке (поиск, реранкер и HTTP-клиент
+    синхронные); события уходят строками JSON по мере прихода — ответы печатаются на глазах."""
     loop, queue = asyncio.get_running_loop(), asyncio.Queue()
 
     def work(mode: str) -> None:
@@ -111,9 +122,9 @@ async def _both_modes(question: str):
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
 
-    for mode in rag.MODES:
+    for mode in rag.LIVE:
         threading.Thread(target=work, args=(mode,), daemon=True).start()
-    left = len(rag.MODES)
+    left = len(rag.LIVE)
     while left:
         event = await queue.get()
         if event is None:
@@ -124,7 +135,7 @@ async def _both_modes(question: str):
 
 @app.post("/api/ask")
 async def ask(body: Ask):
-    """Вопрос агенту в обоих режимах — поток событий (NDJSON)."""
+    """Вопрос агенту в двух режимах RAG — поток событий (NDJSON)."""
     if not body.question.strip():
         raise HTTPException(400, "Пустой вопрос")
     _ready_for_answers()
@@ -133,9 +144,10 @@ async def ask(body: Ask):
 
 @app.get("/api/control")
 def control():
-    """Контрольные вопросы и последний прогон с итогом."""
-    return {"questions": rag.control(), "run": rag.report(), "model": config.LLM_MODEL,
-            "key": bool(config.DASHSCOPE_API_KEY)}
+    """Контрольные вопросы, последний прогон с итогом и что задаст следующий прогон."""
+    questions = rag.control()
+    return {"questions": questions, "run": rag.report(), "model": config.LLM_MODEL,
+            "key": bool(config.DASHSCOPE_API_KEY), "pending": [mode for _, mode in rag.pending(questions)]}
 
 
 @app.post("/api/control/run")
@@ -146,6 +158,35 @@ async def control_run():
     threading.Thread(target=rag.run, daemon=True).start()
     await asyncio.sleep(0.05)
     return rag.state()
+
+
+@app.post("/api/control/stop")
+def control_stop():
+    rag.stop()
+    return rag.state()
+
+
+@app.get("/api/rerank")
+def rerank_view():
+    """Вкладка «Фильтр»: настройки агента и все оценки проверки — метрики считает интерфейс."""
+    return {"settings": rerank.settings, "defaults": rerank.DEFAULTS, "report": rerank.report(),
+            "model": config.RERANK_MODEL, "key": bool(config.DASHSCOPE_API_KEY)}
+
+
+@app.post("/api/rerank/settings")
+def rerank_settings(body: Settings):
+    rerank.settings.update(body.model_dump())
+    return rerank.settings
+
+
+@app.post("/api/rerank/run")
+async def rerank_run():
+    if rerank.running():
+        raise HTTPException(409, "Проверка уже идёт")
+    _ready_for_answers()                    # вопросы переписывает модель
+    threading.Thread(target=rerank.run, daemon=True).start()
+    await asyncio.sleep(0.05)
+    return rerank.state()
 
 
 @app.get("/api/doc", response_class=PlainTextResponse)
