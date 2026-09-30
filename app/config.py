@@ -1,8 +1,12 @@
-"""Настройки проекта: откуда брать документы, куда класть индекс, как резать текст."""
+"""Настройки проекта: откуда брать документы, куда класть индекс, как резать текст,
+какой моделью отвечать. Секреты — только из окружения (.env)."""
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
 DATA = Path(os.getenv("DATA_DIR", ROOT / "data"))
 
 # --- Документы: выгружаются один раз ---
@@ -30,6 +34,17 @@ EMBED_DTYPE = os.getenv("EMBED_DTYPE", "bfloat16")
 # Размер общий для обеих стратегий, иначе сравнивали бы размер, а не способ нарезки.
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 FIXED_OVERLAP = int(os.getenv("FIXED_OVERLAP", "150"))   # только у фиксированной
+
+# --- Модель для ответов: Alibaba Model Studio (DashScope), OpenAI-совместимый режим ---
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+DASHSCOPE_BASE_URL = os.getenv(
+    "DASHSCOPE_BASE_URL",
+    "https://ws-q1vxaj37wm4fa9q8.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+)
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen3.8-2.4t-a95b")
+# Контрольные вопросы с ожиданием и источниками составлены вручную и лежат в git,
+# а не в data/: это часть проекта, а не то, что пайплайн скачивает или считает.
+CONTROL_PATH = ROOT / "control_questions.json"
 
 # --- Сеть ---
 HOST = os.getenv("HOST", "127.0.0.1")

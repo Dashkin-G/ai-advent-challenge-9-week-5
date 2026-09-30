@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Индекс документов</title>
+<title>RAG по ПДД</title>
 <style>
   :root {
     /* Приглушённый шалфейно-оливковый день, как на прошлой неделе: светлота площадей
@@ -25,6 +25,8 @@
     font: 20.5px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   .page { max-width: 1780px; margin: 0 auto; padding: 18px 24px 48px; display: flex; flex-direction: column; gap: 16px; }
+  .tab-body { display: flex; flex-direction: column; gap: 16px; }
+  .tab-body[hidden] { display: none; }
 
   button {
     font: inherit; font-size: 19px; cursor: pointer; border-radius: 10px; padding: 10px 17px;
@@ -51,6 +53,9 @@
   header.top { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
   header.top h1 { margin: 0; font-size: 27.5px; font-weight: 680; }
   header.top .sub { color: var(--muted); font-size: 18.5px; margin-top: 2px; }
+  .tabs { display: flex; gap: 4px; padding: 4px; border-radius: 13px; background: var(--panel-soft); border: 1px solid var(--line); }
+  .tabs button { box-shadow: none; border-color: transparent; background: transparent; font-weight: 600; padding: 8px 18px; }
+  .tabs button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; box-shadow: var(--shadow); }
   .card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
@@ -72,10 +77,10 @@
   .stage-note { font-size: 18px; margin-top: 4px; min-height: 2.7em; overflow-wrap: anywhere; }
   .stage-bar { height: 6px; border-radius: 3px; background: rgba(16,21,8,.15); margin-top: 6px; overflow: hidden; visibility: hidden; }
   .stage-bar i { display: block; height: 100%; width: 0; background: var(--run-line); transition: width .3s ease; }
-  .stage.run { background: var(--run); border: 2px solid var(--run-line); animation: pulse 1.4s ease-in-out infinite; }
+  .stage.run, .step.run { background: var(--run); border: 2px solid var(--run-line); animation: pulse 1.4s ease-in-out infinite; }
   .stage.run .stage-bar { visibility: visible; }
-  .stage.done { background: var(--done); border: 2px solid var(--done-line); }
-  .stage.error { background: var(--fail); border: 2px solid var(--bad); }
+  .stage.done, .step.done { background: var(--done); border: 2px solid var(--done-line); }
+  .stage.error, .step.error { background: var(--fail); border: 2px solid var(--bad); }
   .stage.error .stage-note { color: var(--bad); font-weight: 600; }
   @keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(42,74,111,.3); } }
   .arrow { flex: none; align-self: center; font-size: 24px; color: var(--muted); opacity: .45; transition: color .4s ease; }
@@ -140,10 +145,12 @@
   .where { color: var(--muted); flex: 1; min-width: 0; }
   .tag { border-radius: 7px; padding: 0 9px; font-size: 16.5px; font-weight: 650; white-space: nowrap; }
   .tag.ok { background: var(--accent); color: #f3f6ec; }
+  .tag.used { border: 1px solid var(--accent); color: var(--accent); }
   .hit-text { margin-top: 6px; white-space: pre-wrap; font-size: 19px; cursor: pointer; }
   .hit-text.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .hit.relevant .hit-text { border-left: 4px solid var(--accent); padding-left: 10px; }
   mark { background: var(--mark); color: inherit; border-radius: 3px; }
+  mark.bad { background: var(--fail); }
   .cut { color: var(--bad); font-weight: 700; }
   .meta-toggle { font-size: 16.5px; color: var(--accent); cursor: pointer; margin-top: 4px; display: inline-block; user-select: none; }
   pre.meta {
@@ -151,6 +158,54 @@
     font: 16.5px/1.5 ui-monospace, Consolas, monospace; color: var(--accent); white-space: pre-wrap; overflow-wrap: anywhere;
   }
   .search-info { color: var(--muted); font-size: 17.5px; margin-top: 8px; }
+
+  /* ---------- ответы: два режима рядом ---------- */
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 16px; }
+  @media (max-width: 1200px) { .modes { grid-template-columns: 1fr; } }
+  .mode { min-width: 0; }
+  .flow { display: flex; align-items: stretch; gap: 6px; margin: 10px 0; }
+  .flow .arrow { font-size: 20px; }
+  .step {
+    flex: 1 1 0; min-width: 0; padding: 5px 12px 6px; border-radius: 10px; line-height: 1.3;
+    background: var(--field); border: 2px dashed var(--line); transition: background-color .4s ease, border-color .4s ease;
+  }
+  .step b { font-size: 18.5px; }
+  .step span { display: block; font-size: 16.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step.skip { opacity: .55; }
+  .answer {
+    padding: 12px 16px; border-radius: 10px; background: var(--field); border-left: 6px solid var(--line);
+    white-space: pre-wrap; min-height: 4.8em; font-size: 20.5px;
+  }
+  .answer.final { border-left-color: var(--accent); }
+  .answer.failed { border-left-color: var(--bad); color: var(--bad); font-weight: 600; }
+  .cite { padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel);
+          color: var(--accent); font-size: .86em; font-weight: 650; white-space: nowrap; }
+  .answer-meta { color: var(--muted); font-size: 17px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .think { white-space: pre-wrap; font-size: 17.5px; color: var(--muted); max-height: 320px; overflow: auto; margin-top: 6px; }
+
+  /* ---------- контрольные вопросы ---------- */
+  table.ctl { width: 100%; border-collapse: collapse; margin-top: 16px; }
+  table.ctl th { text-align: left; font-size: 17px; font-weight: 650; color: var(--muted); padding: 6px 12px; border-bottom: 2px solid var(--line); }
+  table.ctl td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top; font-size: 19px; }
+  table.ctl tr.q { cursor: pointer; }
+  table.ctl tr.q:hover > td { background: var(--panel-soft); }
+  table.ctl tr.q.open > td { background: var(--panel-soft); border-top: 2px solid var(--line); }
+  table.ctl td.n { width: 64px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.ctl td.v { width: 16%; }
+  .kind { font-size: 15px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+  .expect { font-size: 18.5px; }
+  .src { font-size: 17px; color: var(--muted); margin-top: 3px; }
+  .badge { display: inline-block; border-radius: 8px; padding: 1px 10px; font-weight: 700; font-size: 18.5px; }
+  .badge.ok { background: var(--win); }
+  .badge.part { background: var(--mark); }
+  .badge.miss { background: var(--fail); color: var(--bad); }
+  .badge.wait { color: var(--muted); font-weight: 500; }
+  .chk { display: block; font-size: 16.5px; color: var(--muted); margin-top: 3px; }
+  .chk.no { color: var(--bad); font-weight: 600; }
+  tr.detail > td { background: var(--panel-soft); padding: 4px 16px 18px; }
+  .factlist { list-style: none; margin: 10px 0 0; padding: 0; font-size: 18.5px; }
+  .factlist li { margin: 2px 0; }
+  .factlist li.no { color: var(--bad); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -158,53 +213,88 @@
 
   <header class="top">
     <div>
-      <h1>Индекс документов для RAG</h1>
-      <div class="sub">ПДД РФ → чанки двумя способами → эмбеддинги bge-m3 → FAISS + SQLite → проверка поиска на вопросах билетов</div>
+      <h1>RAG по правилам дорожного движения</h1>
+      <div class="sub" id="sub"></div>
     </div>
-    <button id="build" class="primary">Построить индекс</button>
+    <nav class="tabs">
+      <button data-tab="answers">Ответы модели</button>
+      <button data-tab="index">Индекс</button>
+    </nav>
   </header>
 
-  <section class="card">
-    <div class="card-head">
-      <div class="card-title">Пайплайн индексации</div>
-    </div>
-    <div class="stages" id="stages" style="margin-top:12px"></div>
-    <div class="run-line"><div id="status" class="muted">—</div></div>
-  </section>
-
-  <div class="grid-2">
+  <!-- ===== Ответы: агент с двумя режимами и контрольные вопросы ===== -->
+  <div class="tab-body" id="tab-answers">
     <section class="card">
       <div class="card-head">
-        <div class="card-title">Документ</div>
-        <button id="redownload" class="small" title="Скачать правила и билеты заново и пересобрать индекс">Скачать заново</button>
+        <div class="card-title">Спросить агента</div>
+        <div class="card-sub">один вопрос — два режима: модель по памяти и модель с найденными пунктами правил</div>
       </div>
-      <div id="docs"><div class="empty">Документы ещё не скачаны.</div></div>
+      <div class="search-row">
+        <input id="ask" placeholder="Спросите о правилах, например: можно ли показать права по QR-коду?" />
+        <button id="ask-btn" class="primary">Спросить</button>
+      </div>
+      <div class="chips" id="ask-chips"></div>
+      <div class="search-info" id="ask-note"></div>
+      <div class="modes" id="modes"></div>
     </section>
+
     <section class="card">
-      <div class="card-head"><div class="card-title">Индекс на диске</div></div>
-      <div id="files"><div class="empty">Индекса ещё нет.</div></div>
+      <div class="card-head">
+        <div>
+          <div class="card-title">10 контрольных вопросов</div>
+          <div class="card-sub" id="control-sub"></div>
+        </div>
+        <button id="control-run" class="primary">Прогнать 10 вопросов</button>
+      </div>
+      <div id="control"><div class="empty">Загружаю…</div></div>
     </section>
   </div>
 
-  <section class="card">
-    <div class="card-head">
-      <div class="card-title">Сравнение стратегий нарезки <span class="en">chunking</span></div>
-    </div>
-    <div id="compare"><div class="empty">Появится после первой сборки индекса.</div></div>
-  </section>
+  <!-- ===== Индекс: день 21 ===== -->
+  <div class="tab-body" id="tab-index" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">Пайплайн индексации</div>
+        <button id="build" class="primary">Построить индекс</button>
+      </div>
+      <div class="stages" id="stages" style="margin-top:12px"></div>
+      <div class="run-line"><div id="status" class="muted">—</div></div>
+    </section>
 
-  <section class="card">
-    <div class="card-head">
-      <div class="card-title">Проверить поиск</div>
-      <div class="card-sub">вопрос → эмбеддинг → 5 ближайших чанков в каждом индексе</div>
+    <div class="grid-2">
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">Документ</div>
+          <button id="redownload" class="small" title="Скачать правила и билеты заново и пересобрать индекс">Скачать заново</button>
+        </div>
+        <div id="docs"><div class="empty">Документы ещё не скачаны.</div></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div class="card-title">Индекс на диске</div></div>
+        <div id="files"><div class="empty">Индекса ещё нет.</div></div>
+      </section>
     </div>
-    <div class="search-row">
-      <input id="query" placeholder="Спросите о правилах, например: где запрещён обгон?" />
-      <button id="find" class="primary">Найти</button>
-    </div>
-    <div class="chips" id="chips"></div>
-    <div id="found"></div>
-  </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">Сравнение стратегий нарезки <span class="en">chunking</span></div>
+      </div>
+      <div id="compare"><div class="empty">Появится после первой сборки индекса.</div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div class="card-title">Проверить поиск</div>
+        <div class="card-sub">вопрос → эмбеддинг → 5 ближайших чанков в каждом индексе</div>
+      </div>
+      <div class="search-row">
+        <input id="query" placeholder="Спросите о правилах, например: где запрещён обгон?" />
+        <button id="find" class="primary">Найти</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div id="found"></div>
+    </section>
+  </div>
 
 </div>
 <script>
@@ -216,7 +306,17 @@ const STEPS = {
   eval:   {title: 'Проверка', idle: 'вопросы билетов → метрики'},
 };
 const EN = {fixed: 'fixed-size', structure: 'structure-based'};
+const TABS = {
+  answers: 'вопрос → 5 ближайших чанков из индекса → модель · рядом та же модель без поиска',
+  index: 'ПДД РФ → чанки двумя способами → эмбеддинги bge-m3 → FAISS + SQLite → проверка поиска на вопросах билетов',
+};
+const MODES = {
+  plain: {title: 'Без RAG', en: 'модель отвечает по памяти'},
+  rag:   {title: 'С RAG', en: 'retrieval-augmented generation'},
+};
 let S = null, O = null, Q = [], rev = -1, chipsFrom = 0;
+let C = null, crev = -1, askFrom = 0, asking = null;
+const opened = new Set();
 const params = new URLSearchParams(location.search);
 let pending = params.get('q') || params.get('question') ? {q: params.get('q'), id: params.get('question')} : null;
 
@@ -253,6 +353,15 @@ async function api(path, body) {
   return data;
 }
 
+// ---------- вкладки ----------
+function showTab(name) {
+  for (const key of Object.keys(TABS)) $('tab-' + key).hidden = key !== name;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  $('sub').textContent = TABS[name];
+  history.replaceState(null, '', location.pathname + location.search + (name === 'index' ? '#index' : ''));
+}
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+
 // ---------- опрос состояния ----------
 async function poll() {
   try {
@@ -264,12 +373,20 @@ async function poll() {
       rev = S.revision;
       render();
     }
+    if (S.control.revision !== crev) {                // пришёл ответ прогона — перерисовать таблицу
+      crev = S.control.revision;
+      C = await api('/api/control');
+      renderControl();
+      renderAskChips();
+    }
     renderStatus();
+    renderControlHead();
+    renderAskNote();
   } catch (e) {
     $('status').textContent = 'Нет связи с приложением: ' + e.message;
     $('status').className = 'bad';
   }
-  setTimeout(poll, S && S.running ? 300 : 1200);
+  setTimeout(poll, S && (S.running || S.control.running) ? 300 : 1200);
 }
 
 const reportStamp = () => O && O.report ? Object.values(O.report.strategies)[0].build.built : null;
@@ -405,6 +522,17 @@ function hist(sizes) {
           <div class="hist-axis"><span>0</span><span>${fmt(Math.round(top / 2))}</span><span>${fmt(top)} знаков</span></div>`;
 }
 
+function cmpBody(rows, keys) {
+  // Строка: [подпись, показ(k), значение(k), что лучше: high|low, класс]; без показа — заголовок группы.
+  return rows.map(([label, show, val, better, cls]) => {
+    if (!show) return `<tr class="group"><td colspan="${keys.length + 1}">${label}</td></tr>`;
+    const v = val ? keys.map(val) : null;
+    const best = v && v[0] !== v[1] ? (better === 'high' ? Math.max(...v) : Math.min(...v)) : null;
+    return `<tr class="${cls || ''}"><td>${label}</td>${keys.map((k, i) =>
+      `<td class="${best !== null && v[i] === best ? 'win' : ''}">${show(k)}</td>`).join('')}</tr>`;
+  }).join('');
+}
+
 function renderCompare() {
   const r = O.report;
   if (!r) { $('compare').innerHTML = '<div class="empty">Появится после первой сборки индекса.</div>'; return; }
@@ -425,17 +553,10 @@ function renderCompare() {
     [`Объём ${r.top} чанков для модели`, k => nw(st[k].search.context, ...W.chars), k => st[k].search.context, 'low'],
     ['MRR@10', k => st[k].search.mrr.toLocaleString('ru-RU'), k => st[k].search.mrr, 'high'],
   ];
-  const body = rows.map(([label, show, val, better, cls]) => {
-    if (!show) return `<tr class="group"><td colspan="3">${label}</td></tr>`;
-    const v = val ? keys.map(val) : null;
-    const best = v && v[0] !== v[1] ? (better === 'high' ? Math.max(...v) : Math.min(...v)) : null;
-    return `<tr class="${cls || ''}"><td>${label}</td>${keys.map((k, i) =>
-      `<td class="${best !== null && v[i] === best ? 'win' : ''}">${show(k)}</td>`).join('')}</tr>`;
-  }).join('');
   $('compare').innerHTML = `
     <table class="cmp">
       <thead><tr><th></th>${keys.map(k => `<th>${esc(st[k].title)} <span class="en">${EN[k]}</span></th>`).join('')}</tr></thead>
-      <tbody>${body}</tbody>
+      <tbody>${cmpBody(rows, keys)}</tbody>
     </table>
     <div class="verdict">${verdict(r)}</div>
     <details class="how"><summary>Как считали</summary><ul>
@@ -520,12 +641,6 @@ function showFound(res) {
   }).join('');
   $('found').innerHTML = golden + `<div class="results">${cols}</div>` +
     `<div class="search-info">Запрос: «${esc(res.query)}» · эмбеддинг и поиск в двух индексах — ${res.ms} мс</div>`;
-  $('found').querySelectorAll('.hit-text').forEach(t => t.onclick = () => t.classList.toggle('clamp'));
-  $('found').querySelectorAll('.meta-toggle').forEach(t => t.onclick = () => {
-    const pre = t.nextElementSibling;
-    pre.hidden = !pre.hidden;
-    t.textContent = pre.hidden ? 'метаданные ▸' : 'метаданные ▾';
-  });
 }
 
 function points(list) {
@@ -556,11 +671,366 @@ function hitHtml(h, judged) {
       <span class="score" title="косинусная близость">${h.score.toLocaleString('ru-RU', {minimumFractionDigits: 3, maximumFractionDigits: 3})}</span>
       <span class="where">${esc(where)}</span>
       ${h.relevant ? '<span class="tag ok">✓ нужный пункт</span>' : ''}
+      ${h.cited ? '<span class="tag used" title="модель сослалась на этот пункт">в ответе</span>' : ''}
     </div>
     <div class="hit-text ${clamp ? 'clamp' : ''}" title="щёлкните, чтобы развернуть или свернуть">${h.cut_start ? '<span class="cut" title="чанк начинается посреди абзаца">…</span>' : ''}${marked(h.text, h.marks)}${h.cut_end ? '<span class="cut" title="чанк обрывается посреди абзаца">…</span>' : ''}</div>
     <span class="meta-toggle">метаданные ▸</span>
     <pre class="meta" hidden>${esc(JSON.stringify(meta, null, 1))}</pre>
   </div>`;
+}
+
+// Чанки разворачиваются и показывают метаданные одинаково во всех выдачах.
+document.addEventListener('click', e => {
+  const text = e.target.closest('.hit-text');
+  if (text) text.classList.toggle('clamp');
+  const toggle = e.target.closest('.meta-toggle');
+  if (toggle) {
+    const pre = toggle.nextElementSibling;
+    pre.hidden = !pre.hidden;
+    toggle.textContent = pre.hidden ? 'метаданные ▸' : 'метаданные ▾';
+  }
+});
+
+// ---------- ответ модели ----------
+const num = n => n.replace(/\((\d+)\)/g, '.$1');         // «24.2(1)» и «24.2.1» — один пункт
+function citedNumbers(answer) {
+  // Номера пунктов из ссылок в квадратных скобках: [п. 10.2 ПДД], [п. 5.4 Перечня неисправностей].
+  const out = new Set();
+  for (const m of answer.matchAll(/\[([^\]]+)\]/g))
+    for (const n of m[1].matchAll(/\d+(?:\.\d+)*(?:\(\d+\))?/g)) out.add(num(n[0]));
+  return out;
+}
+
+function answerHtml(text, facts) {
+  // Найденные ключевые факты — жёлтым, то, чего в ответе быть не должно, — розовым; ссылки на пункты — плашками.
+  const spans = [];
+  (facts || []).forEach(f => f.spans.forEach(([a, b]) => spans.push([a, b, f.absent ? 'bad' : ''])));
+  spans.sort((x, y) => x[0] - y[0]);
+  let out = '', pos = 0;
+  for (const [a, b, cls] of spans) {
+    if (b <= pos) continue;
+    const from = Math.max(a, pos);
+    out += esc(text.slice(pos, from)) + `<mark class="${cls}">` + esc(text.slice(from, b)) + '</mark>';
+    pos = b;
+  }
+  return (out + esc(text.slice(pos))).replace(/\[([^\]<]+)\]/g, '<span class="cite">$1</span>');
+}
+
+function usageLine(u, seconds) {
+  if (!u || !u.prompt_tokens) return `ответ за ${dur(seconds)}`;
+  const thinking = u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens;
+  return `вход ${nw(u.prompt_tokens, ...W.tokens)} · выход ${fmt(u.completion_tokens)}` +
+    (thinking ? `, из них размышления ${fmt(thinking)}` : '') + ` · ответ за ${dur(seconds)}`;
+}
+
+function sourcesHtml(hits, answer) {
+  const cited = citedNumbers(answer || '');
+  return `<div class="label" style="margin-top:16px">найденные чанки — ушли модели в промпт</div>` +
+    hits.map((h, i) => hitHtml({...h, rank: i + 1, cited: h.points.some(p => cited.has(num(p)))}, 'relevant' in h)).join('');
+}
+
+// ---------- спросить агента ----------
+const FLOW = {search: 'Поиск', prompt: 'Промпт', model: 'Модель'};
+
+function askBlocked() {
+  // Что мешает спросить — одной фразой; null — можно спрашивать.
+  if (!O || !C) return 'Загружаю…';
+  if (!O.report) return 'Индекса ещё нет — постройте его на вкладке «Индекс».';
+  if (!C.key) return 'Нет ключа модели: впишите DASHSCOPE_API_KEY в .env и перезапустите приложение.';
+  return null;
+}
+
+function renderAskNote() {
+  const blocked = askBlocked();
+  $('ask-btn').disabled = !!blocked || !!asking;
+  $('ask-btn').textContent = asking ? 'Отвечают…' : 'Спросить';
+  $('ask-note').textContent = blocked && blocked !== 'Загружаю…' ? blocked : '';
+  $('ask-note').style.color = blocked ? 'var(--bad)' : '';
+}
+
+function renderAskChips() {
+  const run = C && C.run, qs = C ? C.questions : [];
+  if (!qs.length) { $('ask-chips').innerHTML = ''; return; }
+  // После прогона первыми — вопросы, где режимы разошлись: на них разница видна сразу.
+  const split = run ? run.questions.filter(q => correct(q.answers.plain) !== correct(q.answers.rag)) : [];
+  const pool = split.length ? split : qs;
+  const pick = [...new Set([0, 1, 2].map(i => pool[(askFrom + i) % pool.length]))];
+  $('ask-chips').innerHTML = `<span class="label">${split.length ? 'где режимы разошлись' : 'контрольные вопросы'}</span>` +
+    pick.map(q => `<button class="chip" data-q="${esc(q.question)}">${esc(q.question)}</button>`).join('') +
+    (pool.length > 3 ? '<button class="chip" id="more-ask" title="другие вопросы">ещё ↻</button>' : '');
+  $('ask-chips').querySelectorAll('[data-q]').forEach(b => b.onclick = () => ask(b.dataset.q));
+  if ($('more-ask')) $('more-ask').onclick = () => { askFrom += 3; renderAskChips(); };
+}
+
+function modeColumn(key) {
+  const m = MODES[key];
+  return `<div class="mode" id="mode-${key}">
+    <div class="col-head"><b>${m.title}</b><span class="en">${m.en}</span></div>
+    <div class="flow">${Object.entries(FLOW).map(([s, title]) =>
+      `<div class="step" data-step="${s}"><b>${title}</b><span>&nbsp;</span></div>`).join('<div class="arrow">→</div>')}</div>
+    <div class="answer"></div>
+    <div class="answer-meta"></div>
+    <details class="how" data-box="prompt" hidden><summary></summary><pre class="meta"></pre></details>
+    <details class="how" data-box="think" hidden><summary></summary><div class="think"></div></details>
+    <div class="sources"></div>
+  </div>`;
+}
+
+function setStep(key, step, status, note) {
+  const el = document.querySelector(`#mode-${key} [data-step="${step}"]`);
+  el.className = 'step ' + status;
+  el.querySelector('span').textContent = note;
+}
+
+function tick() {
+  // Пока модель думает или пишет — секунды на шаге «Модель».
+  for (const [key, st] of Object.entries(asking || {})) {
+    if (st.phase !== 'think' && st.phase !== 'text') continue;
+    const sec = dur((Date.now() - st.t0) / 1000);
+    setStep(key, 'model', 'run', `${st.phase === 'think' ? 'думает' : 'пишет'} · ${sec}`);
+    if (st.phase === 'think') $('mode-' + key).querySelector('.answer').innerHTML = `<span class="muted">модель думает… ${sec}</span>`;
+  }
+}
+
+function fail(key, message) {
+  const col = $('mode-' + key);
+  const running = col.querySelector('.step.run');
+  if (running) setStep(key, running.dataset.step, 'error', 'ошибка');
+  const a = col.querySelector('.answer');
+  a.className = 'answer failed';
+  a.textContent = message;
+  asking[key].phase = 'error';
+}
+
+function onAsk(e) {
+  const key = e.mode, st = asking[key], col = $('mode-' + key);
+  if (e.type === 'sources') {
+    st.hits = e.hits;
+    setStep(key, 'search', 'done', `${nw(e.hits.length, ...W.chunks)} · ${e.ms} мс`);
+    col.querySelector('.sources').innerHTML = sourcesHtml(e.hits, '');
+  } else if (e.type === 'prompt') {
+    const chars = e.messages.reduce((a, m) => a + m.content.length, 0);
+    setStep(key, 'prompt', 'done', st.hits ? `вопрос + ${nw(st.hits.length, ...W.chunks)}` : 'только вопрос');
+    const box = col.querySelector('[data-box="prompt"]');
+    box.hidden = false;
+    box.querySelector('summary').textContent = `Что ушло модели · ${nw(chars, ...W.chars)}`;
+    box.querySelector('pre').textContent = e.messages.map(m => `${m.role}:\n${m.content}`).join('\n\n');
+    Object.assign(st, {phase: 'think', t0: Date.now()});
+    tick();
+  } else if (e.type === 'think') {
+    st.think += e.text;
+  } else if (e.type === 'text') {
+    st.phase = 'text';
+    st.text += e.text;
+    col.querySelector('.answer').textContent = st.text;
+  } else if (e.type === 'done') {
+    st.phase = 'done';
+    setStep(key, 'model', 'done', `ответ за ${dur(e.seconds)}`);
+    const a = col.querySelector('.answer');
+    a.className = 'answer final';
+    a.innerHTML = answerHtml(e.answer);
+    col.querySelector('.answer-meta').textContent = usageLine(e.usage, e.seconds);
+    if (st.think) {
+      const box = col.querySelector('[data-box="think"]');
+      box.hidden = false;
+      box.querySelector('summary').textContent = `Ход мысли модели · ${nw(st.think.length, ...W.chars)}`;
+      box.querySelector('.think').textContent = st.think;
+    }
+    if (st.hits) col.querySelector('.sources').innerHTML = sourcesHtml(st.hits, e.answer);
+  } else if (e.type === 'error') {
+    fail(key, e.text);
+  }
+}
+
+async function readLines(response, onEvent) {
+  // Ответ приходит строками JSON (NDJSON) по мере готовности.
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+    let nl;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      if (line.trim()) onEvent(JSON.parse(line));
+    }
+  }
+}
+
+async function ask(question) {
+  question = question.trim();
+  if (!question || asking || askBlocked()) return;
+  $('ask').value = question;
+  $('modes').innerHTML = Object.keys(MODES).map(modeColumn).join('');
+  asking = {};
+  for (const key of Object.keys(MODES)) {
+    asking[key] = {phase: 'wait', text: '', think: '', hits: null, t0: Date.now()};
+    setStep(key, 'search', key === 'rag' ? 'run' : 'skip', key === 'rag' ? 'ищу чанки…' : 'не нужен');
+  }
+  renderAskNote();
+  const timer = setInterval(tick, 250);
+  try {
+    const r = await fetch('/api/ask', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                       body: JSON.stringify({question})});
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.detail || `ошибка ${r.status}`);
+    }
+    await readLines(r, onAsk);
+  } catch (e) {
+    for (const key of Object.keys(MODES)) if (asking[key].phase !== 'done') fail(key, e.message);
+  } finally {
+    clearInterval(timer);
+    asking = null;
+    renderAskNote();
+  }
+}
+
+// ---------- контрольные вопросы ----------
+const correct = a => !!(a && a.facts && a.facts.length && a.facts.every(f => f.ok));
+
+function renderControlHead() {
+  const st = S && S.control, run = C && C.run, b = $('control-run');
+  b.disabled = !!(st && st.running) || !!askBlocked();
+  b.textContent = st && st.running ? `Идёт прогон · ${st.done} из ${st.total || '…'}`
+    : run ? 'Прогнать заново' : 'Прогнать 10 вопросов';
+  const sub = $('control-sub');
+  sub.style.color = '';
+  if (st && st.error && !st.running) {
+    sub.textContent = 'Прогон остановился: ' + st.error;
+    sub.style.color = 'var(--bad)';
+  } else if (run && run.finished) {
+    const tokens = run.summary.plain.tokens + run.summary.rag.tokens;
+    const took = (new Date(run.finished) - new Date(run.started)) / 1000;
+    sub.textContent = `прогон ${when(run.started)} · ${run.model} · ${nw(tokens, ...W.tokens)} · ${dur(took)} · щёлкните строку, чтобы сравнить ответы`;
+  } else if (!(st && st.running)) {
+    const n = C ? C.questions.length : 10;
+    sub.textContent = `каждый вопрос — в обоих режимах: ${n * 2} ответов модели; она думает перед ответом, поэтому прогон — порядка 100 тыс. токенов и 10–15 минут`;
+  } else {
+    sub.textContent = 'ответы приходят по мере готовности; щёлкните строку, чтобы сравнить их';
+  }
+}
+
+function badge(q, a, mode, running) {
+  if (!a) return `<span class="badge wait">${running ? 'ждёт ответа…' : '—'}</span>`;
+  if (a.error) return `<span class="badge miss">ошибка</span><span class="chk no">${esc(a.error)}</span>`;
+  const ok = a.facts.filter(f => f.ok).length, n = a.facts.length;
+  const head = ok === n ? '<span class="badge ok">верно</span>'
+    : ok ? `<span class="badge part">частично · ${ok} из ${n}</span>` : '<span class="badge miss">мимо</span>';
+  const chk = (good, text) => `<span class="chk ${good ? '' : 'no'}">${good ? '✓' : '✗'} ${text}</span>`;
+  const s = q.sources.length;
+  if (!s) return head;
+  const cited = a.cited.filter(Boolean).length;
+  let html = head + chk(cited === s, cited === s ? 'пункт назван' : cited ? `назван ${cited} из ${s}` : 'пункт не назван');
+  if (mode === 'rag') {
+    const found = a.found.filter(Boolean).length;
+    html += chk(found === s, found === s ? 'пункт в контексте' : found ? `в контексте ${found} из ${s}` : 'промах поиска');
+  }
+  return html;
+}
+
+function detailHtml(q) {
+  const cols = Object.entries(MODES).map(([key, m]) => {
+    const a = q.answers[key];
+    const head = `<div class="col-head"><b>${m.title}</b><span class="en">${m.en}</span></div>`;
+    if (!a) return `<div class="mode">${head}<div class="empty">ответа ещё нет</div></div>`;
+    if (a.error) return `<div class="mode">${head}<div class="answer failed" style="margin-top:10px">${esc(a.error)}</div></div>`;
+    const facts = q.facts.map((f, i) => ({...f, ...a.facts[i]}));
+    return `<div class="mode">${head}
+      <div class="answer final" style="margin-top:10px">${answerHtml(a.answer, facts)}</div>
+      <ul class="factlist">${facts.map(f => `<li class="${f.ok ? '' : 'no'}">${f.ok ? '✓' : '✗'} ${esc(f.text)}</li>`).join('')}</ul>
+      <div class="answer-meta">${usageLine(a.usage, a.seconds)}</div>
+      ${a.think ? `<details class="how"><summary>Ход мысли модели · ${nw(a.think.length, ...W.chars)}</summary><div class="think">${esc(a.think)}</div></details>` : ''}
+      ${a.hits ? sourcesHtml(a.hits, a.answer) : ''}
+    </div>`;
+  }).join('');
+  return `<div class="search-info" style="margin-top:8px"><span class="label">зачем этот вопрос</span> ${esc(q.why)}</div>
+    <div class="modes" style="margin-top:8px">${cols}</div>`;
+}
+
+function controlSummary(run) {
+  const s = run.summary, n = run.questions.length, keys = Object.keys(MODES);
+  const rows = [
+    ['Верных ответов', k => `${s[k].correct} из ${n}`, k => s[k].correct, 'high', 'key'],
+    ['Ключевых фактов в ответах', k => `${s[k].facts} из ${s[k].facts_total}`, k => s[k].facts, 'high'],
+    ['Нужный пункт назван', k => `${s[k].cited} из ${s[k].sources_total}`, k => s[k].cited, 'high'],
+    ['Нужный пункт среди найденных чанков', k => k === 'rag' ? `${s[k].found} из ${s[k].sources_total}` : '<span class="muted">поиска нет</span>'],
+    ['Цена одного ответа, в среднем'],
+    ['Токенов на входе', k => fmt(s[k].tokens_in), k => s[k].tokens_in, 'low'],
+    ['Токенов на выходе, из них размышления', k => `${fmt(s[k].tokens_out)} (${fmt(s[k].tokens_think)})`, k => s[k].tokens_out, 'low'],
+    ['Токенов всего', k => fmt(s[k].tokens_total), k => s[k].tokens_total, 'low', 'key'],
+    ['Время ответа', k => dur(s[k].seconds), k => s[k].seconds, 'low'],
+  ];
+  return `<table class="cmp">
+    <thead><tr><th></th>${keys.map(k => `<th>${MODES[k].title} <span class="en">${MODES[k].en}</span></th>`).join('')}</tr></thead>
+    <tbody>${cmpBody(rows, keys)}</tbody></table>`;
+}
+
+function controlVerdict(run) {
+  const s = run.summary, n = run.questions.length, p = s.paired, split = p.only[0] + p.only[1];
+  const P = s.plain, R = s.rag;
+  let html = `<div>С RAG верных ответов <b>${R.correct} из ${n}</b>, без RAG — <b>${P.correct} из ${n}</b>. ` +
+    (split ? `Режимы разошлись на ${nw(split, 'вопросе', 'вопросах', 'вопросах')}: ${p.only[1]} — за RAG, ${p.only[0]} — против
+      (${pv(p.p)}${p.p < 0.05 ? '' : ': на 10 вопросах это пример, а не доказательство'}).` : 'Режимы ни разу не разошлись.') + '</div>';
+  if (P.tokens_in) html += `<div style="margin-top:4px">Цена: вход с RAG в ${fmt(Math.round(R.tokens_in / P.tokens_in))} раз больше
+      (${fmt(R.tokens_in)} токенов против ${fmt(P.tokens_in)}), ${R.tokens_total < P.tokens_total
+      ? `но модель меньше думает — всего на ответ ${nw(R.tokens_total, ...W.tokens)} против ${fmt(P.tokens_total)}`
+      : `всего на ответ ${nw(R.tokens_total, ...W.tokens)} против ${fmt(P.tokens_total)}`}, время — ${dur(R.seconds)} против ${dur(P.seconds)}.</div>`;
+  // Промахи RAG — по причинам: ошибся поиск или модель не взяла нужное из контекста.
+  const why = {search: 'нужного пункта нет среди найденных чанков — ошибка поиска, а не модели',
+               model: 'пункт был в контексте, но в ответ попало не всё', out: 'ответил не так, как ждали от вопроса вне базы'};
+  const misses = {};
+  run.questions.forEach((q, i) => {
+    const a = q.answers.rag;
+    if (!a || a.error || correct(a)) return;
+    const reason = !q.sources.length ? 'out' : a.found.some(f => !f) ? 'search' : 'model';
+    (misses[reason] = misses[reason] || []).push(i + 1);
+  });
+  const parts = Object.entries(misses).map(([reason, ns]) => `№ ${ns.join(', ')} — ${why[reason]}`);
+  if (parts.length) html += `<div style="margin-top:4px">Где RAG не справился: ${parts.join('; ')}.</div>`;
+  return html;
+}
+
+function renderControl() {
+  if (!C) return;
+  const run = C.run, running = !!(S && S.control.running);
+  const qs = run ? run.questions : C.questions.map(q => ({...q, answers: {}}));
+  const answered = run && (run.summary.plain.answered + run.summary.rag.answered);
+  const summary = !run ? '<div class="empty" style="margin-top:10px">Ещё не прогоняли: таблица ниже — вопросы, ожидания и источники.</div>'
+    : !answered ? '' : controlSummary(run) + (run.finished ? `<div class="verdict">${controlVerdict(run)}</div>` : '');
+  const rows = qs.map((q, i) => `
+    <tr class="q ${opened.has(i) ? 'open' : ''}" data-i="${i}">
+      <td class="n">${i + 1} ${opened.has(i) ? '▾' : '▸'}</td>
+      <td>${esc(q.question)}<div class="kind">${esc(q.kind)}</div></td>
+      <td><div class="expect">${esc(q.expect)}</div>
+        <div class="src">${q.sources.length ? 'источник: ' + q.sources.map(s => esc(s.label)).join('; ') : 'источника в Правилах нет'}</div></td>
+      ${Object.keys(MODES).map(k => `<td class="v">${badge(q, q.answers[k], k, running)}</td>`).join('')}
+    </tr>
+    ${opened.has(i) ? `<tr class="detail"><td></td><td colspan="4">${detailHtml(q)}</td></tr>` : ''}`).join('');
+  $('control').innerHTML = summary + `
+    <table class="ctl">
+      <thead><tr><th>№</th><th>Вопрос</th><th>Ожидание</th>${Object.values(MODES).map(m => `<th>${m.title}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <details class="how"><summary>Как считали</summary><ul>
+      <li><b>Верный ответ</b> — в нём есть все ключевые факты из ожидания. Факты ищутся по тексту ответа регулярными
+        выражениями (числа, термины); совпадения подсвечены — раскройте строку. У вопроса вне базы верно — сказать,
+        что в Правилах этого нет, и не называть сумму штрафа.</li>
+      <li><b>Пункт назван</b> — в ответе есть номер пункта-источника: 10.2, но не 110.2 и не 10.20.</li>
+      <li><b>Пункт в контексте</b> — чанк с ним попал в 5 чанков, которые ушли модели. Если нет — это ошибка поиска, а не модели.</li>
+      <li><b>Токены</b> — как их посчитал DashScope; в выход входят и размышления модели.</li>
+      <li><b>p</b> — точный тест Макнемара по вопросам, где режимы разошлись. На 10 вопросах p &lt; 0,05 получится, только
+        если режимы разошлись хотя бы на 6 вопросах и почти все расхождения — в одну сторону.</li>
+      <li>Модель отвечает не детерминированно: при повторном прогоне формулировки и отдельные вердикты могут измениться.</li>
+    </ul></details>`;
+  $('control').querySelectorAll('tr.q').forEach(tr => tr.onclick = e => {
+    if (e.target.closest('a, button')) return;
+    const i = +tr.dataset.i;
+    opened.has(i) ? opened.delete(i) : opened.add(i);
+    renderControl();
+  });
 }
 
 // ---------- кнопки ----------
@@ -578,7 +1048,19 @@ $('build').onclick = () => build(false);
 $('redownload').onclick = () => build(true);
 $('find').onclick = () => find({query: $('query').value});
 $('query').onkeydown = e => { if (e.key === 'Enter') find({query: $('query').value}); };
+$('ask-btn').onclick = () => ask($('ask').value);
+$('ask').onkeydown = e => { if (e.key === 'Enter') ask($('ask').value); };
+$('control-run').onclick = async () => {
+  try {
+    await api('/api/control/run', {});
+    opened.clear();
+  } catch (e) {
+    $('control-sub').textContent = e.message;
+    $('control-sub').style.color = 'var(--bad)';
+  }
+};
 
+showTab(location.hash === '#index' || pending ? 'index' : 'answers');
 poll();
 </script>
 </body>

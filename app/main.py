@@ -1,15 +1,16 @@
-"""HTTP: интерфейс и API. Логика — в pipeline, здесь только склейка."""
+"""HTTP: интерфейс и API. Логика — в pipeline и rag, здесь только склейка."""
 import asyncio
+import json
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import chunking, config, corpus, index, pipeline
+from . import chunking, config, corpus, index, pipeline, rag
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -22,7 +23,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Индекс документов", lifespan=lifespan)
+app = FastAPI(title="RAG по ПДД", lifespan=lifespan)
 
 
 class Build(BaseModel):
@@ -34,6 +35,10 @@ class Search(BaseModel):
     question_id: str | None = None
 
 
+class Ask(BaseModel):
+    question: str = ""
+
+
 @app.get("/")
 def page():
     return FileResponse(STATIC / "index.html")
@@ -41,8 +46,8 @@ def page():
 
 @app.get("/api/state")
 def state():
-    """Лёгкое состояние для частого опроса: шаги пайплайна и номер ревизии."""
-    return {**pipeline.state(), "model_loaded": index.loaded()}
+    """Лёгкое состояние для частого опроса: шаги пайплайна, прогон контрольных вопросов, ревизии."""
+    return {**pipeline.state(), "model_loaded": index.loaded(), "control": rag.state()}
 
 
 @app.get("/api/overview")
@@ -83,6 +88,64 @@ async def search(body: Search):
     if not body.query.strip() and not body.question_id:
         raise HTTPException(400, "Пустой запрос")
     return await asyncio.to_thread(pipeline.lookup, body.query.strip(), body.question_id)
+
+
+def _ready_for_answers() -> None:
+    if rag.STRATEGY not in index.builds():
+        raise HTTPException(409, "Индекса ещё нет — сначала постройте его")
+    if not config.DASHSCOPE_API_KEY:
+        raise HTTPException(409, "Нет ключа модели: впишите DASHSCOPE_API_KEY в .env и перезапустите приложение")
+
+
+async def _both_modes(question: str):
+    """Оба режима параллельно, каждый в своём потоке (поиск и HTTP-клиент синхронные);
+    события уходят строками JSON по мере прихода — ответы печатаются на глазах."""
+    loop, queue = asyncio.get_running_loop(), asyncio.Queue()
+
+    def work(mode: str) -> None:
+        try:
+            for event in rag.answer(question, mode):
+                loop.call_soon_threadsafe(queue.put_nowait, {"mode": mode, **event})
+        except Exception as e:                              # причина — в колонке режима
+            loop.call_soon_threadsafe(queue.put_nowait, {"mode": mode, "type": "error", "text": str(e)})
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    for mode in rag.MODES:
+        threading.Thread(target=work, args=(mode,), daemon=True).start()
+    left = len(rag.MODES)
+    while left:
+        event = await queue.get()
+        if event is None:
+            left -= 1
+        else:
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+
+
+@app.post("/api/ask")
+async def ask(body: Ask):
+    """Вопрос агенту в обоих режимах — поток событий (NDJSON)."""
+    if not body.question.strip():
+        raise HTTPException(400, "Пустой вопрос")
+    _ready_for_answers()
+    return StreamingResponse(_both_modes(body.question.strip()), media_type="application/x-ndjson")
+
+
+@app.get("/api/control")
+def control():
+    """Контрольные вопросы и последний прогон с итогом."""
+    return {"questions": rag.control(), "run": rag.report(), "model": config.LLM_MODEL,
+            "key": bool(config.DASHSCOPE_API_KEY)}
+
+
+@app.post("/api/control/run")
+async def control_run():
+    if rag.running():
+        raise HTTPException(409, "Прогон уже идёт")
+    _ready_for_answers()
+    threading.Thread(target=rag.run, daemon=True).start()
+    await asyncio.sleep(0.05)
+    return rag.state()
 
 
 @app.get("/api/doc", response_class=PlainTextResponse)

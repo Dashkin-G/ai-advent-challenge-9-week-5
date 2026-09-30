@@ -1,15 +1,20 @@
-"""Сравнение стратегий: как нарезан текст и насколько хорошо по нарезке находится ответ.
+"""Метрики: как нарезан текст, насколько хорошо по нарезке находится ответ
+и насколько верен ответ модели.
 
 Эталон — вопросы экзаменационных билетов, в подсказке к которым указан пункт
 правил, поэтому место ответа в тексте известно заранее. Чанк считается нужным,
 если он и эталонный фрагмент совпадают хотя бы на половину меньшего из двух:
 короткий пункт должен лежать в чанке хотя бы наполовину, а кусок длинного
 пункта — хотя бы наполовину состоять из него.
+
+Ответ модели сверяется с ожиданием контрольного вопроса: есть ли в нём
+ключевые факты и назван ли пункт-источник.
 """
+import re
 import statistics
 from math import comb
 
-from .corpus import Unit
+from .corpus import Unit, variants
 
 TOP = 5         # столько чанков на следующих днях уйдёт модели в контекст
 DEPTH = 10      # глубина выдачи для MRR
@@ -100,3 +105,32 @@ def summary(judged: list[dict]) -> dict:
         "coverage": round(100 * statistics.mean(j["coverage"] for j in judged), 1),
         "context": round(statistics.mean(j["context"] for j in judged)),
     }
+
+
+# --- ответ модели ----------------------------------------------------------------
+
+SUPERSCRIPT = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def facts(answer: str, expected: list[dict]) -> list[dict]:
+    """Какие ключевые факты из ожидания есть в ответе и где — для подсветки.
+    Факт — регулярное выражение по тексту ответа. У факта с absent наоборот:
+    совпадение — ошибка (например, сумма штрафа, которой в Правилах нет)."""
+    out = []
+    for fact in expected:
+        spans = [m.span() for m in re.finditer(fact["re"], answer, re.IGNORECASE)]
+        out.append({"ok": not spans if fact.get("absent") else bool(spans), "spans": spans})
+    return out
+
+
+def cited(answer: str, number: str) -> bool:
+    """Назван ли в ответе пункт: «10.2» — да, «110.2», «10.20» и «10.2.1» — нет.
+    «24.2(1)» модель может написать и как «24.2.1», и как «24.2¹». Номер без точки
+    («п. 8 Основных положений») засчитывается только после «п.» или «пункт»."""
+    forms = variants(number)
+    forms += [re.sub(r"\((\d+)\)$", lambda m: m.group(1).translate(SUPERSCRIPT), f) for f in forms if f.endswith(")")]
+    for form in forms:
+        pattern = re.escape(form) if "." in form else r"(?:п\.|пункт\w*)\s*" + re.escape(form)
+        if re.search(rf"(?<![\d.]){pattern}(?![\d(⁰¹²³⁴⁵⁶⁷⁸⁹]|\.\d)", answer, re.IGNORECASE):
+            return True
+    return False

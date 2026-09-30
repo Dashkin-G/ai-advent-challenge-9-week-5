@@ -175,7 +175,7 @@ def structure(text: str) -> list[Unit]:
     return units
 
 
-def _variants(number: str) -> list[str]:
+def variants(number: str) -> list[str]:
     """«22.2(1)» и «22.2.1» — один пункт: в билетах так, у Гаранта бывает и так."""
     m = re.fullmatch(r"(.+)\((\d+)\)", number) or re.fullmatch(r"(.+)\.(\d+)", number)
     if not m:
@@ -187,7 +187,7 @@ def _variants(number: str) -> list[str]:
 def span(units: list[Unit], text: str, ref: dict) -> tuple[int, int] | None:
     """Где в тексте ответ на ссылку {part, number, term}: пункт вместе с подпунктами
     (2.3 → 2.3.1…2.3.4) или, для термина из 1.2, абзац с его определением."""
-    for number in _variants(ref["number"]):
+    for number in variants(ref["number"]):
         for i, u in enumerate(units):
             if u.part != ref["part"] or u.number != number:
                 continue

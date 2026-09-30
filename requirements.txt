@@ -5,3 +5,4 @@ beautifulsoup4>=4.12
 numpy>=2.0
 faiss-cpu>=1.8
 sentence-transformers>=3.0
+python-dotenv>=1.0
