@@ -8,7 +8,8 @@
 пункта — хотя бы наполовину состоять из него.
 
 Ответ модели сверяется с ожиданием контрольного вопроса: есть ли в нём
-ключевые факты и назван ли пункт-источник.
+ключевые факты и назван ли пункт-источник. Цитата из ответа сверяется с текстом
+чанка: лежит ли она в нём слово в слово.
 """
 import re
 import statistics
@@ -134,3 +135,55 @@ def cited(answer: str, number: str) -> bool:
         if re.search(rf"(?<![\d.]){pattern}(?![\d(⁰¹²³⁴⁵⁶⁷⁸⁹]|\.\d)", answer, re.IGNORECASE):
             return True
     return False
+
+
+# --- цитаты ---------------------------------------------------------------------
+
+def _words(text: str) -> tuple[str, list[int]]:
+    """Текст для сверки цитаты: строчные, «ё» → «е», всё, кроме букв и цифр, — один пробел.
+    Вторым — где каждый оставшийся знак стоял в исходном тексте: чтобы подсветить найденное."""
+    out, pos = [], []
+    for i, ch in enumerate(text):
+        ch = ch.lower().replace("ё", "е")
+        if ch.isalnum():
+            out.append(ch)
+            pos.append(i)
+        elif out and out[-1] != " ":
+            out.append(" ")
+            pos.append(i)
+    return "".join(out), pos
+
+
+def locate(quote: str, text: str) -> tuple[int, int] | None:
+    """Где цитата лежит в тексте: слово в слово, с точностью до регистра, «ё», знаков
+    препинания и пропусков «…» внутри цитаты. Такой фразы в тексте нет — None."""
+    words, pos = _words(text)
+    hay = f" {words} "
+    first = last = None
+    at = 0
+    for part in re.split(r"…|\.{3}", quote):
+        part = _words(part)[0].strip()
+        if not part:
+            continue
+        i = hay.find(f" {part} ", at)           # с пробелами по краям — только целые слова
+        if i < 0:
+            return None
+        first = i if first is None else first
+        last, at = i + len(part) - 1, i + len(part) + 1
+    return None if first is None else (pos[first], pos[last] + 1)
+
+
+NUMBER = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?(?!\d)")
+# Номера сносок и пунктов — не утверждения ответа: [1], п. 10.2, пункта 8, знак 3.20.
+REFS = re.compile(r"\[\d+\]|(?<!\w)(?:пп?\.|пункт\w*|подпункт\w*|знак\w*|разметк\w*|раздел\w*|приложени\w*|ст\.|стать\w*)"
+                  r"\s*\d[\d.()]*", re.IGNORECASE)
+
+
+def numbers(answer: str, quotes: list[str]) -> list[dict]:
+    """Числа ответа и есть ли каждое в цитатах: скорость, расстояние, возраст, размер —
+    то, что модель выдумывает чаще всего. «1,6» и «1.6» — одно число."""
+    basis, out = " ".join(quotes), {}
+    for m in NUMBER.finditer(REFS.sub(" ", answer)):
+        pattern = r"(?<![\d.,])" + re.sub(r"[.,]", "[.,]", m.group()) + r"(?!\d|[.,]\d)"
+        out.setdefault(m.group(), bool(re.search(pattern, basis)))
+    return [{"number": n, "ok": ok} for n, ok in out.items()]

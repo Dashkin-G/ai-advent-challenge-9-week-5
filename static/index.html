@@ -184,6 +184,22 @@
   .answer-meta { color: var(--muted); font-size: 17px; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .think { white-space: pre-wrap; font-size: 17.5px; color: var(--muted); max-height: 320px; overflow: auto; margin-top: 6px; }
 
+  /* ---------- ответ с цитатами: слева ответ, справа — чанки, откуда он ---------- */
+  .evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 1200px) { .evidence { grid-template-columns: 1fr; } }
+  .answer.unknown { border-left-color: var(--run-line); }
+  .clarify { margin-top: 8px; font-weight: 650; }
+  .near { margin-top: 6px; color: var(--muted); font-size: 18px; }
+  .srcs .label { display: block; margin-top: 16px; }
+  .src { padding: 8px 0 10px; border-bottom: 1px solid var(--line); }
+  .src-head { color: var(--muted); font-size: 17.5px; }
+  .src-head b { color: var(--text); }
+  .quote { margin-top: 5px; font-size: 19.5px; white-space: pre-line; }
+  .quote.bad { color: var(--bad); }
+  .verdicts { margin-top: 8px; }
+  .chk.warn { color: var(--text); font-weight: 600; }
+  mark.quote { background: var(--win); box-shadow: inset 0 -2px 0 var(--accent); }
+
   /* ---------- контрольные вопросы ---------- */
   table.ctl { width: 100%; border-collapse: collapse; margin-top: 16px; }
   table.ctl th { text-align: left; font-size: 17px; font-weight: 650; color: var(--muted); padding: 6px 12px; border-bottom: 2px solid var(--line); }
@@ -192,7 +208,7 @@
   table.ctl tr.q:hover > td { background: var(--panel-soft); }
   table.ctl tr.q.open > td { background: var(--panel-soft); border-top: 2px solid var(--line); }
   table.ctl td.n { width: 64px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  table.ctl td.v { width: 16%; }
+  table.ctl td.v { width: 20%; }
   .kind { font-size: 15px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
   .expect { font-size: 18.5px; }
   .src { font-size: 17px; color: var(--muted); margin-top: 3px; }
@@ -207,8 +223,7 @@
   .factlist { list-style: none; margin: 10px 0 0; padding: 0; font-size: 18.5px; }
   .factlist li { margin: 2px 0; }
   .factlist li.no { color: var(--bad); font-weight: 600; }
-  .modes.three { grid-template-columns: repeat(3, 1fr); }
-  @media (max-width: 1400px) { .modes.three { grid-template-columns: 1fr; } }
+  .factlist .no-q { color: var(--bad); font-weight: 600; }
 
   /* ---------- второй этап: переписанный вопрос и отсеянные чанки ---------- */
   .rewrite { margin: 2px 0 10px; font-size: 18.5px; }
@@ -271,7 +286,7 @@
     <section class="card">
       <div class="card-head">
         <div class="card-title">Спросить агента</div>
-        <div class="card-sub">один вопрос — два RAG рядом: как вчера и со вторым этапом поиска</div>
+        <div class="card-sub">ответ — только с источниками и цитатами из найденных чанков; подходящих чанков нет — «не знаю»</div>
       </div>
       <div class="search-row">
         <input id="ask" placeholder="Спросите о правилах, например: можно ли показать права по QR-коду?" />
@@ -279,7 +294,7 @@
       </div>
       <div class="chips" id="ask-chips"></div>
       <div class="search-info" id="ask-note"></div>
-      <div class="modes" id="modes"></div>
+      <div id="modes" style="margin-top:12px"></div>
     </section>
 
     <section class="card">
@@ -378,16 +393,15 @@ const STEPS = {
 };
 const EN = {fixed: 'fixed-size', structure: 'structure-based'};
 const TABS = {
-  answers: 'вопрос → поиск по правилам → модель · слева RAG как вчера, справа — со вторым этапом поиска',
+  answers: 'вопрос → поиск и реранкер → модель отвечает с источниками и цитатами → программа сверяет цитаты с чанками',
   filter: 'вопрос → 20 ближайших чанков по косинусу → реранкер перечитывает каждую пару «вопрос — чанк» → в контекст — выше порога',
   index: 'ПДД РФ → чанки двумя способами → эмбеддинги bge-m3 → FAISS + SQLite → проверка поиска на вопросах билетов',
 };
 const MODES = {
-  plain:  {title: 'Без RAG', en: 'модель отвечает по памяти'},
-  rag:    {title: 'RAG', en: '5 ближайших чанков по косинусу'},
-  rerank: {title: 'RAG + фильтр', en: 'rewrite → rerank → порог'},
+  rerank: {title: 'RAG + фильтр', en: 'вчера: пункт в скобках'},
+  cite:   {title: 'С цитатами', en: 'answer + sources + quotes'},
 };
-const LIVE = ['rag', 'rerank'];             // живой вопрос: два RAG рядом
+const LIVE = ['cite'];                      // живой вопрос задаётся агенту с цитатами
 let S = null, O = null, Q = [], rev = -1, chipsFrom = 0;
 let C = null, crev = -1, askFrom = 0, asking = null;
 let F = null, frev = -1, knobs = null, saveTimer = null;
@@ -737,12 +751,12 @@ function points(list) {
 }
 
 function marked(text, marks) {
-  // Подсветка того, где в чанке лежит эталонный пункт; позиции — относительно начала чанка.
+  // Подсветка того, где в чанке лежит эталонный пункт или цитата ([от, до, класс]); позиции — от начала чанка.
   const spans = (marks || []).slice().sort((a, b) => a[0] - b[0]);
   let out = '', pos = 0;
-  for (const [a, b] of spans) {
+  for (const [a, b, cls] of spans) {
     if (b <= pos) continue;
-    out += esc(text.slice(pos, Math.max(a, pos))) + '<mark>' + esc(text.slice(Math.max(a, pos), b)) + '</mark>';
+    out += esc(text.slice(pos, Math.max(a, pos))) + `<mark class="${cls || ''}">` + esc(text.slice(Math.max(a, pos), b)) + '</mark>';
     pos = b;
   }
   return (out + esc(text.slice(pos))).replace(/\n\n/g, '\n');
@@ -754,7 +768,7 @@ function hitHtml(h, judged) {
   const meta = {chunk_id: h.chunk_id, strategy: h.strategy, source: h.source, title: h.title, section: h.section,
                 points: h.points, start: h.start, end: h.end, chars: h.chars, tokens: h.tokens,
                 ...(reranked ? {rerank_score: h.score, cosine: h.cos, cosine_rank: h.vrank} : {score: h.score})};
-  const clamp = judged ? !h.relevant : true;
+  const clamp = !(judged && h.relevant) && !h.quoted;     // нужный пункт и чанк с цитатой — целиком
   const where = [points(h.points), h.section].filter(Boolean).join(' · ');
   return `<div class="hit ${h.relevant ? 'relevant' : ''}">
     <div class="hit-head">
@@ -764,6 +778,7 @@ function hitHtml(h, judged) {
       <span class="where">${esc(where)}</span>
       ${h.relevant ? '<span class="tag ok">✓ нужный пункт</span>' : ''}
       ${h.cited ? '<span class="tag used" title="модель сослалась на этот пункт">в ответе</span>' : ''}
+      ${h.quoted ? `<span class="tag used" title="из этого чанка взята цитата">цитата ${h.quoted}</span>` : ''}
     </div>
     <div class="hit-text ${clamp ? 'clamp' : ''}" title="щёлкните, чтобы развернуть или свернуть">${h.cut_start ? '<span class="cut" title="чанк начинается посреди абзаца">…</span>' : ''}${marked(h.text, h.marks)}${h.cut_end ? '<span class="cut" title="чанк обрывается посреди абзаца">…</span>' : ''}</div>
     <span class="meta-toggle">метаданные ▸</span>
@@ -815,11 +830,18 @@ function usageLine(u, seconds) {
     (thinking ? `, из них размышления ${fmt(thinking)}` : '') + ` · ответ за ${dur(seconds)}`;
 }
 
-function sourcesHtml(hits, answer, dropped, s) {
-  // dropped — только у второго этапа: кандидаты, которые реранкер не пустил в контекст.
-  const cited = citedNumbers(answer || ''), judged = hits.concat(dropped || []).some(h => 'relevant' in h);
-  const item = (h, i) => hitHtml({...h, rank: i + 1, cited: h.points.some(p => cited.has(num(p)))}, judged);
-  if (!dropped) return `<div class="label" style="margin-top:16px">найденные чанки — ушли модели в промпт</div>` + hits.map(item).join('');
+const chk = (good, text) => `<span class="chk ${good ? '' : 'no'}">${good ? '✓' : '✗'} ${text}</span>`;
+
+function sourcesHtml(hits, answer, dropped, s, quotes) {
+  // dropped — кандидаты, которые реранкер не пустил в контекст. У ответа с цитатами (quotes) в чанке
+  // подсвечены цитаты и стоят их номера, у ответа дня 23 — отметка, что модель назвала пункт этого чанка.
+  const cited = citedNumbers(answer || ''), judged = hits.concat(dropped).some(h => 'relevant' in h);
+  const numbered = (quotes || []).map((q, i) => ({...q, n: i + 1}));
+  const item = (h, i) => {
+    const own = numbered.filter(q => q.found === h.chunk_id);
+    return hitHtml({...h, rank: i + 1, ...(quotes ? {marks: own.map(q => [...q.at, 'quote']), quoted: own.map(q => q.n).join(', ')}
+                                                  : {cited: h.points.some(p => cited.has(num(p)))})}, judged);
+  };
   const low = dropped.filter(h => h.why === 'threshold').length, over = dropped.length - low, all = hits.length + dropped.length;
   const head = hits.length ? `в контекст — ${hits.length} из ${all}: оценка не ниже ${num2(s.threshold)}, не больше ${s.top}`
                            : `ни один из ${all} кандидатов не набрал ${num2(s.threshold)} — модель не звали`;
@@ -828,11 +850,53 @@ function sourcesHtml(hits, answer, dropped, s) {
       ${dropped.map((h, i) => item(h, hits.length + i)).join('')}</details>` : '');
 }
 
+function answerBody(a, facts) {
+  // Ответ, а у «не знаю» — просьба уточнить; если модель не звали — и что было ближе всего, но ниже порога.
+  let html = answerHtml(a.answer, facts);
+  if (a.clarify) html += `<div class="clarify">${esc(a.clarify)}</div>`;
+  if (a.skipped && a.dropped && a.dropped.length) html += `<div class="near">Ближе всего, но ниже порога ${num2(a.settings.threshold)}: ` +
+    a.dropped.slice(0, 2).map(h => `${esc([points(h.points), h.section].filter(Boolean).join(' — '))} (${num2(h.score)})`).join('; ') + '</div>';
+  return html;
+}
+
+function quotesHtml(a, hits) {
+  // Источник — чанк, из которого взята цитата: chunk_id называет модель, документ, раздел и пункт берутся
+  // из метаданных чанка и места цитаты в нём. Цитата засчитана, если нашлась в чанке слово в слово.
+  if (!a.quotes.length) return `<div class="verdicts">${chk(false, 'источников и цитат нет — ответ ничем не подтверждён')}</div>`;
+  const groups = new Map();
+  a.quotes.forEach((q, i) => {
+    const id = q.found || q.chunk_id;
+    groups.set(id, [...(groups.get(id) || []), {...q, n: i + 1}]);
+  });
+  const items = [...groups].map(([id, qs]) => {
+    const h = hits.find(x => x.chunk_id === id), labels = [...new Set(qs.map(q => q.label).filter(Boolean))].join(', ');
+    const head = h ? `<b>${esc(labels || points(h.points))}</b> · ${esc(h.title)} › ${esc(h.section)} · <code>${esc(id)}</code> ·
+                      <a href="${esc(h.source)}" target="_blank">garant.ru ↗</a>`
+                   : `<b>такого чанка среди найденных нет</b> · <code>${esc(id)}</code>`;
+    return `<div class="src"><div class="src-head">${head}</div>${qs.map(q =>
+      `<div class="quote ${q.found ? '' : 'bad'}"><span class="cite">${q.n}</span> «${esc(q.text.trim())}»${q.found ? '' : ' — в чанке такой фразы нет'}</div>`).join('')}</div>`;
+  }).join('');
+  return `<span class="label">источники и цитаты</span>${items}<div class="verdicts">${quoteChecks(a, hits)}</div>`;
+}
+
+function quoteChecks(a, hits) {
+  // Три проверки ответа: источники — из найденных чанков, цитаты — слово в слово, числа ответа — из цитат.
+  const ids = new Set(hits.map(h => h.chunk_id)), q = a.quotes;
+  const fake = q.filter(x => !ids.has(x.chunk_id)).length, exact = q.filter(x => x.found).length;
+  const alien = q.filter(x => x.found && !x.own).length, nums = a.numbers || [], missing = nums.filter(x => !x.ok);
+  return [
+    chk(!fake, fake ? `${fake} из ${q.length} ссылаются на чанк, которого среди найденных нет`
+                    : `источники — ${nw(new Set(q.map(x => x.chunk_id)).size, ...W.chunks)} из найденных`),
+    chk(exact === q.length && !alien, exact < q.length ? `слово в слово — ${exact} из ${q.length}: остальных в чанках нет`
+      : alien ? `цитаты дословные, но ${alien} — из другого чанка, чем назвала модель` : `${nw(q.length, 'цитата', 'цитаты', 'цитат')} — слово в слово из чанков`),
+    !nums.length ? '' : missing.length
+      ? `<span class="chk warn">⚠ ${missing.map(x => x.number).join(', ')} — в цитатах нет: это вывод модели или выдумка</span>`
+      : chk(true, `числа ответа есть в цитатах: ${nums.map(x => x.number).join(', ')}`),
+  ].join('');
+}
+
 // ---------- спросить агента ----------
-const FLOWS = {
-  rag: {search: 'Поиск', prompt: 'Промпт', model: 'Модель'},
-  rerank: {rewrite: 'Переписать', search: 'Поиск', rerank: 'Реранкер', prompt: 'Промпт', model: 'Модель'},
-};
+const FLOWS = {cite: {rewrite: 'Переписать', search: 'Поиск', rerank: 'Реранкер', prompt: 'Промпт', model: 'Модель'}};
 
 function askBlocked() {
   // Что мешает спросить — одной фразой; null — можно спрашивать.
@@ -845,7 +909,7 @@ function askBlocked() {
 function renderAskNote() {
   const blocked = askBlocked();
   $('ask-btn').disabled = !!blocked || !!asking;
-  $('ask-btn').textContent = asking ? 'Отвечают…' : 'Спросить';
+  $('ask-btn').textContent = asking ? 'Отвечает…' : 'Спросить';
   $('ask-note').textContent = blocked && blocked !== 'Загружаю…' ? blocked : '';
   $('ask-note').style.color = blocked ? 'var(--bad)' : '';
 }
@@ -853,8 +917,8 @@ function renderAskNote() {
 function renderAskChips() {
   const run = C && C.run, qs = C ? C.questions : [];
   if (!qs.length) { $('ask-chips').innerHTML = ''; return; }
-  // После прогона первыми — вопросы, где RAG и RAG + фильтр разошлись: на них разница видна сразу.
-  const split = run ? run.questions.filter(q => q.answers.rerank && correct(q.answers.rag) !== correct(q.answers.rerank)) : [];
+  // После прогона первыми — вопросы, где ответы вчера и с цитатами разошлись: на них разница видна сразу.
+  const split = run ? run.questions.filter(q => q.answers.cite && correct(q.answers.rerank) !== correct(q.answers.cite)) : [];
   const pool = split.length ? split : qs;
   const pick = [...new Set([0, 1, 2].map(i => pool[(askFrom + i) % pool.length]))];
   $('ask-chips').innerHTML = `<span class="label">${split.length ? 'где режимы разошлись' : 'контрольные вопросы'}</span>` +
@@ -865,17 +929,21 @@ function renderAskChips() {
 }
 
 function modeColumn(key) {
-  const m = MODES[key];
+  // Шаги — во всю ширину, ниже слева ответ с источниками и цитатами, справа — чанки, откуда он.
   return `<div class="mode" id="mode-${key}">
-    <div class="col-head"><b>${m.title}</b><span class="en">${m.en}</span></div>
-    <div class="flow ${Object.keys(FLOWS[key]).length > 3 ? 'long' : ''}">${Object.entries(FLOWS[key]).map(([s, title]) =>
+    <div class="flow long">${Object.entries(FLOWS[key]).map(([s, title]) =>
       `<div class="step" data-step="${s}"><b>${title}</b><span>&nbsp;</span></div>`).join('<div class="arrow">→</div>')}</div>
     <div class="rewrite" hidden></div>
-    <div class="answer"></div>
-    <div class="answer-meta"></div>
-    <details class="how" data-box="prompt" hidden><summary></summary><pre class="meta"></pre></details>
-    <details class="how" data-box="think" hidden><summary></summary><div class="think"></div></details>
-    <div class="sources"></div>
+    <div class="evidence">
+      <div>
+        <div class="answer"></div>
+        <div class="srcs"></div>
+        <div class="answer-meta"></div>
+        <details class="how" data-box="prompt" hidden><summary></summary><pre class="meta"></pre></details>
+        <details class="how" data-box="think" hidden><summary></summary><div class="think"></div></details>
+      </div>
+      <div class="sources"></div>
+    </div>
   </div>`;
 }
 
@@ -926,13 +994,12 @@ function onAsk(e) {
     tick();
   } else if (e.type === 'sources') {
     Object.assign(st, {hits: e.hits, dropped: e.dropped, settings: e.settings, phase: 'wait'});
-    if (e.dropped) setStep(key, 'rerank', 'done', `${e.hits.length} из ${e.hits.length + e.dropped.length} · ` +
-                                                  (e.seconds < 0.1 ? 'кэш' : `${Math.round(e.seconds)} с`));
-    else setStep(key, 'search', 'done', `${nw(e.hits.length, ...W.chunks)} · ${e.ms} мс`);
-    col.querySelector('.sources').innerHTML = sourcesHtml(e.hits, '', e.dropped, e.settings);
+    setStep(key, 'rerank', 'done', `${e.hits.length} из ${e.hits.length + e.dropped.length} · ` +
+                                   (e.seconds < 0.1 ? 'кэш' : `${Math.round(e.seconds)} с`));
+    col.querySelector('.sources').innerHTML = sourcesHtml(e.hits, '', e.dropped, e.settings, []);
   } else if (e.type === 'prompt') {
-    const chars = e.messages.reduce((a, m) => a + m.content.length, 0), n = nw(st.hits ? st.hits.length : 0, ...W.chunks);
-    setStep(key, 'prompt', 'done', !st.hits ? 'только вопрос' : key === 'rerank' ? n : `вопрос + ${n}`);
+    const chars = e.messages.reduce((a, m) => a + m.content.length, 0);
+    setStep(key, 'prompt', 'done', nw(st.hits.length, ...W.chunks));
     const box = col.querySelector('[data-box="prompt"]');
     box.hidden = false;
     box.querySelector('summary').textContent = `Что ушло модели · ${nw(chars, ...W.chars)}`;
@@ -942,14 +1009,16 @@ function onAsk(e) {
   } else if (e.type === 'think') {
     st.think += e.text;
   } else if (e.type === 'text') {
+    // Модель пишет JSON — на экран он попадёт разобранным, когда ответ придёт целиком.
+    if (st.phase !== 'text') col.querySelector('.answer').innerHTML = '<span class="muted">модель пишет ответ…</span>';
     st.phase = 'text';
     st.text += e.text;
-    col.querySelector('.answer').textContent = st.text;
   } else if (e.type === 'done') {
     st.phase = 'done';
-    const a = col.querySelector('.answer');
-    a.className = 'answer final';
-    a.innerHTML = answerHtml(e.answer);
+    const a = col.querySelector('.answer'), got = {...e, dropped: st.dropped, settings: st.settings};
+    a.className = 'answer final' + (e.unknown ? ' unknown' : '');
+    a.innerHTML = answerBody(got);
+    col.querySelector('.srcs').innerHTML = e.unknown ? '' : quotesHtml(got, st.hits);
     const rewrite = st.rewrite && !st.rewrite.cached ? ` · переписывание — ${nw(st.rewrite.tokens, ...W.tokens)}` : '';
     if (e.skipped) {                // порог не прошёл ни один чанк — ответ без модели
       setStep(key, 'prompt', 'skip', 'не нужен');
@@ -965,7 +1034,7 @@ function onAsk(e) {
       box.querySelector('summary').textContent = `Ход мысли модели · ${nw(st.think.length, ...W.chars)}`;
       box.querySelector('.think').textContent = st.think;
     }
-    if (st.hits) col.querySelector('.sources').innerHTML = sourcesHtml(st.hits, e.answer, st.dropped, st.settings);
+    col.querySelector('.sources').innerHTML = sourcesHtml(st.hits, e.answer, st.dropped, st.settings, e.quotes);
   } else if (e.type === 'error') {
     fail(key, e.text);
   }
@@ -994,9 +1063,7 @@ async function ask(question) {
   $('ask').value = question;
   $('modes').innerHTML = LIVE.map(modeColumn).join('');
   asking = {};
-  for (const key of LIVE) asking[key] = {phase: 'wait', text: '', think: '', hits: null, t0: Date.now()};
-  setStep('rag', 'search', 'run', 'ищу чанки…');
-  asking.rerank.phase = 'rewrite';
+  for (const key of LIVE) asking[key] = {phase: 'rewrite', text: '', think: '', hits: null, t0: Date.now()};
   renderAskNote();
   const timer = setInterval(tick, 250);
   try {
@@ -1019,8 +1086,8 @@ async function ask(question) {
 // ---------- контрольные вопросы ----------
 const correct = a => !!(a && a.facts && a.facts.length && a.facts.every(f => f.ok));
 
-// Токенов на ответ, пока своего прогона нет: замер дня 22 и оценка для фильтра.
-const PRICE = {plain: 6500, rag: 3300, rerank: 3000};
+// Токенов на ответ, пока своего прогона нет: замер дня 23 и пробы с цитатами — модель думает дольше.
+const PRICE = {rerank: 2700, cite: 4000};
 // Второй этап, взятый из кэша, занимает доли секунды — так и пишем, а не «0 с».
 const stageTime = sec => sec < 0.5 ? 'из кэша' : dur(sec);
 
@@ -1069,16 +1136,24 @@ function badge(q, a, mode, running) {
   const ok = a.facts.filter(f => f.ok).length, n = a.facts.length;
   const head = ok === n ? '<span class="badge ok">верно</span>'
     : ok ? `<span class="badge part">частично · ${ok} из ${n}</span>` : '<span class="badge miss">мимо</span>';
-  const chk = (good, text) => `<span class="chk ${good ? '' : 'no'}">${good ? '✓' : '✗'} ${text}</span>`;
-  const s = q.sources.length;
-  if (!s) return head + (a.skipped ? chk(true, 'отказ без модели') : '');
-  const cited = a.cited.filter(Boolean).length;
-  let html = head + chk(cited === s, cited === s ? 'пункт назван' : cited ? `назван ${cited} из ${s}` : 'пункт не назван');
-  if (mode !== 'plain') {
-    const found = a.found.filter(Boolean).length, cut = (a.cut || []).some(Boolean);
-    html += chk(found === s, found === s ? 'пункт в контексте' : found ? `в контексте ${found} из ${s}` : cut ? 'отсеян фильтром' : 'промах поиска');
+  const s = q.sources.length, cite = mode === 'cite';
+  if (!s) return head + chk(a.unknown, !a.unknown ? 'ответил, хотя в Правилах ответа нет'
+    : (cite ? '«не знаю» ' : 'отказ ') + (a.skipped ? 'без модели' : '— решила модель'));
+  const cited = a.cited.filter(Boolean).length, found = a.found.filter(Boolean).length, cut = a.cut.some(Boolean);
+  let html = head;
+  if (cite && a.unknown) {
+    html += chk(false, 'ложное «не знаю»');
+  } else if (cite) {
+    // Пункт процитирован, цитаты слово в слово, факты ответа есть в цитатах — смысл ответа совпадает с ними.
+    const exact = a.quotes.filter(x => x.found).length, nq = a.quotes.length;
+    const lost = q.facts.filter((f, i) => a.backed[i] === false).map(f => f.text), checked = a.backed.some(b => b !== null);
+    html += chk(cited === s, cited === s ? 'нужный пункт процитирован' : cited ? `процитирован ${cited} из ${s}` : 'нужный пункт не процитирован');
+    html += chk(nq && exact === nq, !nq ? 'цитат нет' : exact === nq ? `${nw(nq, 'цитата', 'цитаты', 'цитат')} слово в слово` : `слово в слово ${exact} из ${nq}`);
+    if (checked) html += chk(!lost.length, lost.length ? `нет в цитатах: ${esc(lost.join('; '))}` : 'факты ответа — в цитатах');
+  } else {
+    html += chk(cited === s, cited === s ? 'пункт назван' : cited ? `назван ${cited} из ${s}` : 'пункт не назван');
   }
-  return html;
+  return html + chk(found === s, found === s ? 'пункт в контексте' : found ? `в контексте ${found} из ${s}` : cut ? 'отсеян фильтром' : 'промах поиска');
 }
 
 function detailHtml(q) {
@@ -1087,39 +1162,50 @@ function detailHtml(q) {
     const head = `<div class="col-head"><b>${m.title}</b><span class="en">${m.en}</span></div>`;
     if (!a) return `<div class="mode">${head}<div class="empty">ответа ещё нет</div></div>`;
     if (a.error) return `<div class="mode">${head}<div class="answer failed" style="margin-top:10px">${esc(a.error)}</div></div>`;
-    const facts = q.facts.map((f, i) => ({...f, ...a.facts[i]}));
-    const stage = a.rewrite ? ` · второй этап ${stageTime(a.stage_seconds)}, переписывание — ${nw(a.rewrite.tokens, ...W.tokens)}` : '';
+    const cite = key === 'cite', facts = q.facts.map((f, i) => ({...f, ...a.facts[i], backed: cite ? a.backed[i] : null}));
+    const stage = ` · второй этап ${stageTime(a.stage_seconds)}, переписывание — ${nw(a.rewrite.tokens, ...W.tokens)}`;
+    const inQuote = f => f.backed === true ? ' <span class="muted">· есть в цитате</span>' : f.backed === false ? ' <span class="no-q">· нет в цитатах</span>' : '';
     return `<div class="mode">${head}
-      ${a.rewrite ? `<div class="rewrite" style="margin-top:8px"><span class="label">переписано для реранкера</span> <q>${esc(a.rewrite.text)}</q></div>` : ''}
-      <div class="answer final" style="margin-top:10px">${answerHtml(a.answer, facts)}</div>
-      <ul class="factlist">${facts.map(f => `<li class="${f.ok ? '' : 'no'}">${f.ok ? '✓' : '✗'} ${esc(f.text)}</li>`).join('')}</ul>
+      <div class="rewrite" style="margin-top:8px"><span class="label">переписано для реранкера</span> <q>${esc(a.rewrite.text)}</q></div>
+      <div class="answer final ${a.unknown && cite ? 'unknown' : ''}">${answerBody(a, facts)}</div>
+      ${cite && !a.unknown ? `<div class="srcs">${quotesHtml(a, a.hits)}</div>` : ''}
+      <ul class="factlist">${facts.map(f => `<li class="${f.ok ? '' : 'no'}">${f.ok ? '✓' : '✗'} ${esc(f.text)}${inQuote(f)}</li>`).join('')}</ul>
       <div class="answer-meta">${a.skipped ? 'ответ без модели: 0 токенов' : usageLine(a.usage, a.seconds)}${stage}</div>
       ${a.think ? `<details class="how"><summary>Ход мысли модели · ${nw(a.think.length, ...W.chars)}</summary><div class="think">${esc(a.think)}</div></details>` : ''}
-      ${a.hits ? sourcesHtml(a.hits, a.answer, a.dropped, a.settings) : ''}
+      ${sourcesHtml(a.hits, a.answer, a.dropped, a.settings, cite ? a.quotes : null)}
     </div>`;
   }).join('');
   return `<div class="search-info" style="margin-top:8px"><span class="label">зачем этот вопрос</span> ${esc(q.why)}</div>
-    <div class="modes three" style="margin-top:8px">${cols}</div>`;
+    <div class="modes" style="margin-top:8px">${cols}</div>`;
 }
 
 function controlSummary(run) {
   // Режим без ответов в итог не попадает: его нули выглядели бы как лучшие значения.
   const s = run.summary, n = run.questions.length, keys = Object.keys(MODES).filter(k => s[k].answered);
-  const none = '<span class="muted">—</span>', searched = k => k !== 'plain';
+  // Строки про источники и цитаты есть только у ответа с цитатами — у вчерашнего прочерк, а пока
+  // с цитатами не прогоняли, этих строк нет совсем.
+  const only = show => k => k === 'cite' ? show(s[k]) : '<span class="muted">—</span>';
+  const quoted = !s.cite.answered ? [] : [
+    ['Источники и цитаты — в ответах, где агент не сказал «не знаю»'],
+    ['Ответов с источниками', only(x => `${x.sourced} из ${x.said}`), null, null, 'key'],
+    ['Ответов с цитатами', only(x => `${x.quoted} из ${x.said}`), null, null, 'key'],
+    ['Цитат слово в слово из чанков', only(x => `${x.verbatim} из ${x.quotes}` +
+      (x.verbatim > x.own ? ` <span class="muted">(из другого чанка — ${x.verbatim - x.own})</span>` : ''))],
+    ['Факты ответа подтверждены цитатами', only(x => `${x.backed} из ${x.backed_total}`), null, null, 'key'],
+  ];
   const rows = [
     ['Верных ответов', k => `${s[k].correct} из ${n}`, k => s[k].correct, 'high', 'key'],
     ['Ключевых фактов в ответах', k => `${s[k].facts} из ${s[k].facts_total}`, k => s[k].facts, 'high'],
-    ['Нужный пункт назван', k => `${s[k].cited} из ${s[k].sources_total}`, k => s[k].cited, 'high'],
-    ['Нужный пункт в контексте', k => searched(k) ? `${s[k].found} из ${s[k].sources_total}` : '<span class="muted">поиска нет</span>',
-     k => searched(k) ? s[k].found : null, 'high'],
-    ['Чанков в контексте', k => searched(k) ? num1(s[k].chunks) : none, k => searched(k) ? s[k].chunks : null, 'low'],
-    ['Отказ без вызова модели', k => k === 'rerank' ? `${s[k].skipped} из ${n}` : none],
+    ['Нужный пункт назван (вчера) или процитирован', k => `${s[k].cited} из ${s[k].sources_total}`, k => s[k].cited, 'high'],
+    ['Нужный пункт в контексте', k => `${s[k].found} из ${s[k].sources_total}`, k => s[k].found, 'high'],
+    ['«Не знаю»', k => `${s[k].unknown} из ${n}` + (s[k].skipped ? ` <span class="muted">(без модели — ${s[k].skipped})</span>` : '')],
+    ...quoted,
     ['Цена одного ответа, в среднем'],
     ['Токенов на входе', k => fmt(s[k].tokens_in), k => s[k].tokens_in, 'low'],
     ['Токенов на выходе, из них размышления', k => `${fmt(s[k].tokens_out)} (${fmt(s[k].tokens_think)})`, k => s[k].tokens_out, 'low'],
     ['Токенов всего', k => fmt(s[k].tokens_total) + (s[k].tokens_rewrite ? ` <span class="muted">(с переписыванием ${fmt(s[k].tokens_rewrite)})</span>` : ''),
      k => s[k].tokens_total, 'low', 'key'],
-    ['Время ответа', k => dur(s[k].seconds) + (k === 'rerank' ? ` <span class="muted">(второй этап ${stageTime(s[k].seconds_stage)})</span>` : ''),
+    ['Время ответа', k => dur(s[k].seconds) + ` <span class="muted">(второй этап ${stageTime(s[k].seconds_stage)})</span>`,
      k => s[k].seconds, 'low'],
   ];
   return `<table class="cmp">
@@ -1143,24 +1229,18 @@ function misses(run, mode) {
 }
 
 function controlVerdict(run) {
-  const s = run.summary, n = run.questions.length, P = s.plain, R = s.rag, X = s.rerank;
-  const said = (p, a, b) => {
-    const split = p.only[0] + p.only[1];
-    return split ? `Разошлись на ${nw(split, 'вопросе', 'вопросах', 'вопросах')}: ${p.only[1]} — за ${a}, ${p.only[0]} — за ${b}
-      (${pv(p.p)}${p.p < 0.05 ? '' : ': на 10 вопросах это пример, а не доказательство'}).` : 'Ни разу не разошлись.';
-  };
-  if (!X.answered) {                          // фильтр ещё не прогоняли — итог дня 22
-    const miss = misses(run, 'rag');
-    return `<div>С RAG верных ответов <b>${R.correct} из ${n}</b>, без RAG — <b>${P.correct} из ${n}</b>. ${said(s.paired.rag, 'RAG', 'память')}</div>` +
-      (miss ? `<div style="margin-top:4px">Где RAG не справился: ${miss}.</div>` : '');
-  }
-  let html = `<div>С фильтром верных ответов <b>${X.correct} из ${n}</b>, RAG без него — <b>${R.correct} из ${n}</b>, без RAG — ${P.correct} из ${n}.
-    ${said(s.paired.rerank, 'фильтр', 'RAG без него')}</div>`;
-  html += `<div style="margin-top:4px">Цена: в контексте ${num1(X.chunks)} чанка вместо ${num1(R.chunks)}, вход — ${nw(X.tokens_in, ...W.tokens)} против ${fmt(R.tokens_in)};
-    всего на ответ ${nw(X.tokens_total, ...W.tokens)} против ${fmt(R.tokens_total)}, время — ${dur(X.seconds)} против ${dur(R.seconds)}
-    (второй этап ${stageTime(X.seconds_stage)}).${X.skipped ? ` Без вызова модели — ${nw(X.skipped, 'ответ', 'ответа', 'ответов')}.` : ''}</div>`;
-  const miss = misses(run, 'rerank');
-  if (miss) html += `<div style="margin-top:4px">Где фильтр не справился: ${miss}.</div>`;
+  const s = run.summary, n = run.questions.length, R = s.rerank, X = s.cite, p = s.paired.cite;
+  if (!X.answered) return `<div>С цитатами ещё не прогоняли. Вчера, RAG + фильтр: верных ответов <b>${R.correct} из ${n}</b>.</div>`;
+  const split = p.only[0] + p.only[1];
+  let html = `<div>С цитатами агент ответил на ${nw(X.said, 'вопрос', 'вопроса', 'вопросов')} и сказал «не знаю» на ${X.unknown}.
+    Источники — в <b>${X.sourced} из ${X.said}</b> ответов, цитаты — в <b>${X.quoted} из ${X.said}</b>, слово в слово —
+    <b>${X.verbatim} из ${X.quotes}</b> цитат; факты ответа подтверждены цитатами — <b>${X.backed} из ${X.backed_total}</b>.</div>`;
+  html += `<div style="margin-top:4px">Верных ответов — ${X.correct} из ${n}, вчера — ${R.correct} из ${n}` + (split
+    ? `: разошлись на ${nw(split, 'вопросе', 'вопросах', 'вопросах')}, ${p.only[1]} — за цитатами (${pv(p.p)}${p.p < 0.05 ? '' : ': на 10 вопросах это пример, а не доказательство'}).`
+    : ', ни разу не разошлись.') + ` Цена: ${nw(X.tokens_total, ...W.tokens)} на ответ против ${fmt(R.tokens_total)} вчера,
+    из них размышления — ${fmt(X.tokens_think)} против ${fmt(R.tokens_think)}; время — ${dur(X.seconds)} против ${dur(R.seconds)}.</div>`;
+  const miss = misses(run, 'cite');
+  if (miss) html += `<div style="margin-top:4px">Где не справился: ${miss}.</div>`;
   return html;
 }
 
@@ -1187,21 +1267,27 @@ function renderControl() {
     </table>
     <details class="how"><summary>Как считали</summary><ul>
       <li><b>Верный ответ</b> — в нём есть все ключевые факты из ожидания. Факты ищутся по тексту ответа регулярными
-        выражениями (числа, термины); совпадения подсвечены — раскройте строку. У вопроса вне базы верно — сказать,
-        что в Правилах этого нет, и не называть сумму штрафа.</li>
-      <li><b>Пункт назван</b> — в ответе есть номер пункта-источника: 10.2, но не 110.2 и не 10.20.</li>
-      <li><b>Пункт в контексте</b> — чанк с ним ушёл модели: у RAG это 5 ближайших чанков, у RAG + фильтр — те, что прошли
-        порог реранкера. Если нет — ошибка поиска или фильтра, а не модели.</li>
-      <li><b>Отказ без вызова модели</b> — ни один чанк не прошёл порог: агент сразу отвечает, что в правилах ответа нет.</li>
-      <li><b>Токены</b> — как их посчитал DashScope; в выход входят и размышления модели. У RAG + фильтр в цену
-        входит и переписывание вопроса, даже взятое из кэша: оно оплачено один раз.</li>
-      <li><b>Время</b> — как его прождал ответ. Второй этап у нового вопроса — около 13 секунд: переписывание ~6 с
-        и реранкер ~7 с на процессоре; у повторного всё берётся из кэша.</li>
+        выражениями (числа, термины); совпадения подсвечены — раскройте строку. У вопроса вне базы верно — сказать
+        «не знаю» и не называть сумму штрафа.</li>
+      <li><b>Источник</b> — чанк, из которого взята цитата: его chunk_id называет модель, документ, раздел и пункт берутся
+        из метаданных чанка и места цитаты в нём. Источник засчитан, если такой чанк был среди найденных.</li>
+      <li><b>Цитата слово в слово</b> — нашлась в тексте чанка с точностью до регистра, «ё», знаков препинания и
+        пропусков «…». Не нашлась — модель её пересказала или выдумала.</li>
+      <li><b>Факт ответа подтверждён цитатой</b> — ключевой факт, найденный в ответе, есть и в его цитатах. У факта-вывода
+        («с 12 лет») в цитате должно быть то, на чём он держится («от 7 до 11 лет включительно»). На живом вопросе ожидания
+        нет — там сверяются числа: каждое число ответа должно найтись в цитатах.</li>
+      <li><b>Нужный пункт процитирован</b> — хотя бы одна цитата лежит в пункте-источнике. Вчера — номер пункта назван в ответе.</li>
+      <li><b>Пункт в контексте</b> — чанк с ним прошёл порог реранкера и ушёл модели. Если нет — ошибка поиска или фильтра, а не модели.</li>
+      <li><b>«Не знаю»</b> — ни один чанк не прошёл порог: агент отвечает «не знаю», просит уточнить вопрос и не зовёт модель.
+        Если чанки прошли порог, а ответа в них нет, «не знаю» говорит модель и сама спрашивает, что уточнить.
+        От «не знаю» источников и цитат не требуется.</li>
+      <li><b>Токены</b> — как их посчитал DashScope; в выход входят и размышления модели. В цену входит переписывание
+        вопроса, даже взятое из кэша: оно оплачено один раз.</li>
       <li><b>p</b> — точный тест Макнемара по вопросам, где режимы разошлись. На 10 вопросах p &lt; 0,05 получится, только
         если режимы разошлись хотя бы на 6 вопросах и почти все расхождения — в одну сторону.</li>
-      <li>Модель отвечает не детерминированно: при повторном прогоне формулировки и отдельные вердикты могут измениться.
-        Поэтому кнопка перезадаёт только RAG + фильтр — его настройки двигаются на вкладке «Фильтр», — а два других
-        режима прогоняются, лишь когда их ответов нет.</li>
+      <li>Модель отвечает не детерминированно. Кнопка перезадаёт только ответы с цитатами — настройки второго этапа
+        двигаются на вкладке «Фильтр»; ответы RAG + фильтр — из прогона дня 23. Ответы дня 22 (без RAG и RAG) остались
+        в файле прогона, но в таблицу не выводятся.</li>
     </ul></details>`;
   $('control').querySelectorAll('tr.q').forEach(tr => tr.onclick = e => {
     if (e.target.closest('a, button')) return;
@@ -1329,7 +1415,7 @@ function syncKnobs() {
   }
   const def = F.defaults, same = Object.keys(KNOBS).every(k => knobs[k] === def[k]);
   $('changed').innerHTML = same
-    ? '<span class="muted">Это настройки агента: с ними отвечает RAG + фильтр на вкладке «Ответы модели». Подобраны замером ниже.</span>'
+    ? '<span class="muted">Это настройки агента: с ними он отвечает на вкладке «Ответы модели», а ниже порога говорит «не знаю». Подобраны замером ниже.</span>'
     : `Агент отвечает с изменёнными настройками. Подобранные замером: ${def.candidates} кандидатов, порог ${num2(def.threshold)},
        в контекст ${def.top} — <a href="#" id="reset-knobs">вернуть</a>`;
   const reset = $('reset-knobs');
@@ -1374,7 +1460,7 @@ function renderLadder() {
         с пунктом хотя бы наполовину меньшего из двух.</li>
       <li><b>Столбцы</b> — одни и те же вопросы и кандидаты: первые по косинусу из индекса «по структуре». Без второго этапа модели
         уходят первые из них, с реранкером — лучшие по его оценке, если она не ниже порога.</li>
-      <li><b>Отказ без модели</b> — ни один кандидат не набрал порога: агент отвечает «в правилах ответа нет» и не зовёт модель.
+      <li><b>Отказ без модели</b> — ни один кандидат не набрал порога: агент отвечает «не знаю», просит уточнить вопрос и не зовёт модель.
         У вопроса с ответом это ложный отказ.</li>
       <li><b>Переписанный вопрос</b> нужен реранкеру, а не поиску: по одному исходному вопросу разговорная формулировка занижает
         оценку («права по QR-коду» — 0,01 у верного пункта), по одному переписанному вопрос вне базы выглядит ответимым.

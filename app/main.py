@@ -108,9 +108,9 @@ def _ready_for_answers() -> None:
         raise HTTPException(409, "Нет ключа модели: впишите DASHSCOPE_API_KEY в .env и перезапустите приложение")
 
 
-async def _both_modes(question: str):
-    """RAG и RAG + фильтр параллельно, каждый в своём потоке (поиск, реранкер и HTTP-клиент
-    синхронные); события уходят строками JSON по мере прихода — ответы печатаются на глазах."""
+async def _live(question: str):
+    """Режимы живого вопроса (rag.LIVE), каждый в своём потоке: поиск, реранкер и HTTP-клиент
+    синхронные. События уходят строками JSON по мере прихода — шаги видны на глазах."""
     loop, queue = asyncio.get_running_loop(), asyncio.Queue()
 
     def work(mode: str) -> None:
@@ -135,11 +135,11 @@ async def _both_modes(question: str):
 
 @app.post("/api/ask")
 async def ask(body: Ask):
-    """Вопрос агенту в двух режимах RAG — поток событий (NDJSON)."""
+    """Вопрос агенту — поток событий (NDJSON)."""
     if not body.question.strip():
         raise HTTPException(400, "Пустой вопрос")
     _ready_for_answers()
-    return StreamingResponse(_both_modes(body.question.strip()), media_type="application/x-ndjson")
+    return StreamingResponse(_live(body.question.strip()), media_type="application/x-ndjson")
 
 
 @app.get("/api/control")
