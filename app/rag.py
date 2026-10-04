@@ -33,7 +33,6 @@ from datetime import datetime
 from . import config, corpus, evaluate, llm, pipeline, rerank
 
 MODES = {"rerank": "RAG + фильтр", "cite": "С цитатами"}
-LIVE = ("cite",)        # живой вопрос задаётся агенту с цитатами
 STRATEGY = "structure"
 REPORT = config.DATA / "eval" / "control_run.json"
 WORKERS = 5             # ответов модели одновременно: 20 ответов по 10–30 с укладываются в пару минут
@@ -138,19 +137,25 @@ def verify(got: dict, hits: list[dict]) -> dict:
     return {"quotes": quotes, "numbers": evaluate.numbers(got["answer"], real)}
 
 
-def second_stage(question: str) -> Iterator[dict]:
+def second_stage(question: str, rewritten: str | None = None) -> Iterator[dict]:
     """Второй этап поиска событиями: rewrite → candidates → sources (прошли порог и отсеяны).
     seconds — время реранкера, stage — всего этапа, как его прождал вопрос (с кэшем — доли секунды).
+    Чат переписывает реплику сам, с учётом диалога (rewritten), и кандидатов ищет по ней:
+    «а младшего спереди?» сама по себе ничего не найдёт. На 139 вопросах с ответом поиск по
+    переписанному не хуже поиска по исходному: после реранкера нужный пункт в контексте у 122.
     Возвращает чанки для контекста."""
     s = dict(rerank.settings)               # ползунок сдвинут посреди ответа — ответ досчитается по старым
     begun = time.perf_counter()
-    rewritten = rerank.rewrite(question)
-    yield {"type": "rewrite", **rewritten}
+    search = question if rewritten is None else rewritten
+    if rewritten is None:
+        got = rerank.rewrite(question)
+        yield {"type": "rewrite", **got}
+        rewritten = got["text"]
     started = time.perf_counter()
-    hits = rerank.candidates(question, s["candidates"])
+    hits = rerank.candidates(search, s["candidates"])
     yield {"type": "candidates", "count": len(hits), "ms": round(1000 * (time.perf_counter() - started))}
     started = time.perf_counter()
-    passed, dropped = rerank.stage(question, rewritten["text"], hits, s["threshold"], s["top"])
+    passed, dropped = rerank.stage(question, rewritten, hits, s["threshold"], s["top"])
     now = time.perf_counter()
     yield {"type": "sources", "hits": passed, "dropped": dropped, "settings": s,
            "seconds": round(now - started, 1), "stage": round(now - begun, 1)}
@@ -169,20 +174,26 @@ def answer(question: str, mode: str) -> Iterator[dict]:
         return
     prompt = messages(question, hits, mode)
     yield {"type": "prompt", "messages": prompt}
+    said, usage, seconds = yield from ask_model(prompt, mode == "cite")
+    done = {"type": "done", **said, "usage": usage, "seconds": seconds, "unknown": unknown(said)}
+    if mode == "cite":
+        done.update(verify(said, hits))
+    yield done
+
+
+def ask_model(prompt: list[dict], cite: bool) -> Iterator[dict]:
+    """Вызов модели событиями think… text…; возвращает разобранный ответ, расход токенов и время.
+    С цитатами (cite) ответ — JSON, его разбирает _parse."""
     started, parts, usage = time.perf_counter(), [], {}
-    for kind, value in llm.stream(prompt, as_json=mode == "cite"):
+    for kind, value in llm.stream(prompt, as_json=cite):
         if kind == "usage":
             usage = value
             continue
         if kind == "text":
             parts.append(value)
         yield {"type": kind, "text": value}
-    said = _parse("".join(parts)) if mode == "cite" else {"answer": _plain("".join(parts))}
-    done = {"type": "done", **said, "usage": usage, "seconds": round(time.perf_counter() - started, 1),
-            "unknown": unknown(said)}
-    if mode == "cite":
-        done.update(verify(said, hits))
-    yield done
+    said = _parse("".join(parts)) if cite else {"answer": _plain("".join(parts))}
+    return said, usage, round(time.perf_counter() - started, 1)
 
 
 def unknown(a: dict) -> bool:

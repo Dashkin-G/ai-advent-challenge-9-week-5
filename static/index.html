@@ -264,6 +264,67 @@
     background: var(--text); color: #eef2e4; font-size: 17px; line-height: 1.4; box-shadow: var(--shadow);
   }
   .tip b { font-size: 19px; }
+
+  /* ---------- чат: слева диалоги, в центре разговор, справа память задачи ---------- */
+  .chat-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr) 390px; gap: 16px; align-items: start; }
+  @media (max-width: 1350px) { .chat-layout { grid-template-columns: 270px minmax(0, 1fr); } .chat-memory { grid-column: 1 / -1; } }
+  .chat-side, .chat-memory { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+  button.wide { width: 100%; font-size: 20.5px; padding: 12px 17px; }
+  .chat-list { margin-top: 6px; }
+  .you-row { display: flex; gap: 10px; align-items: center; justify-content: flex-end; max-width: 86%; }
+  .turn-n { flex: none; min-width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+            background: var(--panel-soft); border: 1px solid var(--line); color: var(--muted); font-size: 16.5px; font-weight: 700; }
+  .you-row .bubble { max-width: none; }
+  .src-line { margin-top: 6px; font-size: 18.5px; }
+  .src-line summary { cursor: pointer; color: var(--muted); }
+  .src-line summary b { color: var(--accent); }
+  .check { margin-top: 6px; font-size: 17.5px; color: var(--accent); font-weight: 600; }
+  .check.bad { color: var(--bad); }
+  .jump { font-weight: 700; }
+  .chat-item { padding: 8px 10px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+  .chat-item:hover { background: var(--panel-soft); }
+  .chat-item.active { background: var(--field); border-color: var(--line); }
+  .chat-item .t { font-size: 18.5px; font-weight: 620; line-height: 1.35;
+                  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .chat-item .m { font-size: 16px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  button.x { box-shadow: none; border: none; background: transparent; padding: 0 4px; font-size: 16px; color: var(--muted); }
+  button.x:hover:not(:disabled) { color: var(--bad); background: transparent; }
+  .side-label { display: block; margin-top: 20px; }
+  .run-box { margin-top: 10px; }
+  .run-box button { width: 100%; }
+  .chat-main { min-height: 70vh; display: flex; flex-direction: column; }
+  .chat-turns { flex: 1; }
+  .turn { margin-top: 20px; }
+  .you { display: flex; flex-direction: column; align-items: flex-end; }
+  .bubble { background: var(--accent); color: #f3f6ec; border-radius: 14px 14px 4px 14px; padding: 9px 16px;
+            max-width: 80%; white-space: pre-wrap; }
+  .mem-diff { font-size: 16.5px; color: var(--muted); margin-top: 4px; text-align: right; max-width: 80%; }
+  .mem-diff .add { color: var(--accent); font-weight: 650; }
+  .mem-diff .del { color: var(--bad); text-decoration: line-through; }
+  .agent { margin-top: 10px; max-width: 94%; }
+  .agent .answer { min-height: 0; }
+  .src-row { margin-top: 5px; font-size: 18.5px; }
+  .src-row b { color: var(--accent); }
+  .src-row.bad { color: var(--bad); }
+  .turn-meta { color: var(--muted); font-size: 16.5px; margin-top: 6px; }
+  .checks { margin-top: 8px; padding: 6px 12px; border-radius: 10px; background: var(--panel-soft); }
+  .checks .chk { display: inline-block; margin-right: 16px; }
+  .ablation { margin-top: 8px; padding: 8px 12px; border-radius: 10px; border: 2px dashed var(--line); font-size: 18.5px; }
+  .ablation .answer { font-size: 18.5px; padding: 8px 12px; margin-top: 6px; }
+  .window-line { margin: 26px 0 0; padding-top: 6px; border-top: 2px dashed var(--run-line); color: var(--run-line);
+                 font-size: 16.5px; font-weight: 600; text-align: center; }
+  .composer { position: sticky; bottom: 0; display: flex; gap: 10px; margin-top: 18px; padding: 12px 0 2px;
+              background: var(--panel); border-top: 1px solid var(--line); }
+  .composer input { flex: 1; font-size: 20.5px; }
+  .mem-block { margin-top: 14px; }
+  .mem-goal { font-size: 21.5px; font-weight: 650; line-height: 1.4; margin-top: 2px; }
+  .mem-item { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; padding: 3px 6px;
+              margin: 2px -6px; border-radius: 7px; font-size: 19px; }
+  .fresh { background: var(--mark); border-radius: 7px; }
+  .mem-gone { color: var(--bad); text-decoration: line-through; font-size: 17.5px; }
+  .mem-note { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 16.5px; }
+  .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 26px; vertical-align: -6px; margin: 0 4px; }
+  .bars i { width: 9px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .8; }
 </style>
 </head>
 <body>
@@ -275,28 +336,49 @@
       <div class="sub" id="sub"></div>
     </div>
     <nav class="tabs">
+      <button data-tab="chat">Чат</button>
       <button data-tab="answers">Ответы модели</button>
       <button data-tab="filter">Фильтр</button>
       <button data-tab="index">Индекс</button>
     </nav>
   </header>
 
-  <!-- ===== Ответы: агент и контрольные вопросы ===== -->
-  <div class="tab-body" id="tab-answers">
-    <section class="card">
-      <div class="card-head">
-        <div class="card-title">Спросить агента</div>
-        <div class="card-sub">ответ — только с источниками и цитатами из найденных чанков; подходящих чанков нет — «не знаю»</div>
-      </div>
-      <div class="search-row">
-        <input id="ask" placeholder="Спросите о правилах, например: можно ли показать права по QR-коду?" />
-        <button id="ask-btn" class="primary">Спросить</button>
-      </div>
-      <div class="chips" id="ask-chips"></div>
-      <div class="search-info" id="ask-note"></div>
-      <div id="modes" style="margin-top:12px"></div>
-    </section>
+  <!-- ===== Чат: история, память задачи, сценарии проверки ===== -->
+  <div class="tab-body" id="tab-chat">
+    <div class="chat-layout">
+      <aside class="card chat-side">
+        <button id="chat-new" class="primary wide">＋ Новый диалог</button>
+        <span class="label side-label">Мои диалоги</span>
+        <div class="chat-list" id="chat-list"></div>
+        <span class="label side-label">Сценарии проверки</span>
+        <div class="chat-list" id="scenario-list"></div>
+        <div class="run-box">
+          <button id="scenario-run">Прогнать</button>
+          <div class="card-sub" id="scenario-price"></div>
+        </div>
+      </aside>
 
+      <section class="card chat-main">
+        <div class="card-title" id="chat-title">Новый диалог</div>
+        <div class="card-sub" id="chat-sub"></div>
+        <div id="chat-summary"></div>
+        <div class="chat-turns" id="chat-turns"></div>
+        <div class="composer">
+          <input id="chat-input" placeholder="Напишите, в чём хотите разобраться, или задайте вопрос" />
+          <button id="chat-send" class="primary">Отправить</button>
+        </div>
+        <div class="search-info" id="chat-note"></div>
+      </section>
+
+      <aside class="card chat-memory">
+        <div class="card-title">Память задачи <span class="en">task state</span></div>
+        <div id="memory"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ===== Ответы: контрольные вопросы ===== -->
+  <div class="tab-body" id="tab-answers" hidden>
     <section class="card">
       <div class="card-head">
         <div style="flex:1 1 0;min-width:0">
@@ -393,6 +475,7 @@ const STEPS = {
 };
 const EN = {fixed: 'fixed-size', structure: 'structure-based'};
 const TABS = {
+  chat: 'сообщение → память задачи → поиск по правилам → ответ с источником',
   answers: 'вопрос → поиск и реранкер → модель отвечает с источниками и цитатами → программа сверяет цитаты с чанками',
   filter: 'вопрос → 20 ближайших чанков по косинусу → реранкер перечитывает каждую пару «вопрос — чанк» → в контекст — выше порога',
   index: 'ПДД РФ → чанки двумя способами → эмбеддинги bge-m3 → FAISS + SQLite → проверка поиска на вопросах билетов',
@@ -401,12 +484,13 @@ const MODES = {
   rerank: {title: 'RAG + фильтр', en: 'вчера: пункт в скобках'},
   cite:   {title: 'С цитатами', en: 'answer + sources + quotes'},
 };
-const LIVE = ['cite'];                      // живой вопрос задаётся агенту с цитатами
 let S = null, O = null, Q = [], rev = -1, chipsFrom = 0;
-let C = null, crev = -1, askFrom = 0, asking = null;
+let C = null, crev = -1;
 let F = null, frev = -1, knobs = null, saveTimer = null;
 const opened = new Set();
 const params = new URLSearchParams(location.search);
+let H = null, hrev = -1, CV = null, chatId = +params.get('chat') || null, live = null, lastError = null;
+const boxes = new Set();                    // раскрытые блоки в диалоге — переживают перерисовку
 let pending = params.get('q') || params.get('question') ? {q: params.get('q'), id: params.get('question')} : null;
 
 const $ = id => document.getElementById(id);
@@ -436,9 +520,10 @@ function when(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
 }
-async function api(path, body) {
-  const r = await fetch(path, body === undefined ? {} : {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+async function api(path, body, method) {
+  const r = await fetch(path, body === undefined && !method ? {} : {
+    method: method || 'POST', headers: {'Content-Type': 'application/json'},
+    body: body === undefined ? undefined : JSON.stringify(body)});
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || `ошибка ${r.status}`);
   return data;
@@ -449,7 +534,7 @@ function showTab(name) {
   for (const key of Object.keys(TABS)) $('tab-' + key).hidden = key !== name;
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   $('sub').textContent = TABS[name];
-  history.replaceState(null, '', location.pathname + location.search + (name === 'answers' ? '' : '#' + name));
+  history.replaceState(null, '', location.pathname + location.search + (name === 'chat' ? '' : '#' + name));
   if (name === 'filter') renderFilter();      // ширина графиков известна, только когда вкладка видна
 }
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
@@ -469,7 +554,14 @@ async function poll() {
       crev = S.control.revision;
       C = await api('/api/control');
       renderControl();
-      renderAskChips();
+    }
+    if (S.chat.revision !== hrev) {                   // в истории новый ход: свой или прогона сценариев
+      hrev = S.chat.revision;
+      H = await api('/api/chats');
+      if (!chatId && H.chats.length) chatId = H.chats[0].id;
+      if (chatId && !(live && live.chat === chatId)) CV = await api('/api/chats/' + chatId).catch(() => null);
+      renderChatSide();
+      renderChat();
     }
     if (S.rerank.revision !== frev) {                 // шаг проверки фильтра или её новый отчёт
       frev = S.rerank.revision;
@@ -481,13 +573,14 @@ async function poll() {
     }
     renderStatus();
     renderControlHead();
-    renderAskNote();
     renderFilterHead();
+    renderScenarioHead();
+    renderComposer();
   } catch (e) {
     $('status').textContent = 'Нет связи с приложением: ' + e.message;
     $('status').className = 'bad';
   }
-  setTimeout(poll, S && (S.running || S.control.running || S.rerank.running) ? 300 : 1200);
+  setTimeout(poll, S && (S.running || S.control.running || S.rerank.running || S.chat.running) ? 300 : 1200);
 }
 
 const reportStamp = () => O && O.report ? Object.values(O.report.strategies)[0].build.built : null;
@@ -895,149 +988,13 @@ function quoteChecks(a, hits) {
   ].join('');
 }
 
-// ---------- спросить агента ----------
-const FLOWS = {cite: {rewrite: 'Переписать', search: 'Поиск', rerank: 'Реранкер', prompt: 'Промпт', model: 'Модель'}};
-
+// ---------- чат ----------
 function askBlocked() {
-  // Что мешает спросить — одной фразой; null — можно спрашивать.
+  // Что мешает спросить модель — одной фразой; null — можно спрашивать.
   if (!O || !C) return 'Загружаю…';
   if (!O.report) return 'Индекса ещё нет — постройте его на вкладке «Индекс».';
   if (!C.key) return 'Нет ключа модели: впишите DASHSCOPE_API_KEY в .env и перезапустите приложение.';
   return null;
-}
-
-function renderAskNote() {
-  const blocked = askBlocked();
-  $('ask-btn').disabled = !!blocked || !!asking;
-  $('ask-btn').textContent = asking ? 'Отвечает…' : 'Спросить';
-  $('ask-note').textContent = blocked && blocked !== 'Загружаю…' ? blocked : '';
-  $('ask-note').style.color = blocked ? 'var(--bad)' : '';
-}
-
-function renderAskChips() {
-  const run = C && C.run, qs = C ? C.questions : [];
-  if (!qs.length) { $('ask-chips').innerHTML = ''; return; }
-  // После прогона первыми — вопросы, где ответы вчера и с цитатами разошлись: на них разница видна сразу.
-  const split = run ? run.questions.filter(q => q.answers.cite && correct(q.answers.rerank) !== correct(q.answers.cite)) : [];
-  const pool = split.length ? split : qs;
-  const pick = [...new Set([0, 1, 2].map(i => pool[(askFrom + i) % pool.length]))];
-  $('ask-chips').innerHTML = `<span class="label">${split.length ? 'где режимы разошлись' : 'контрольные вопросы'}</span>` +
-    pick.map(q => `<button class="chip" data-q="${esc(q.question)}">${esc(q.question)}</button>`).join('') +
-    (pool.length > 3 ? '<button class="chip" id="more-ask" title="другие вопросы">ещё ↻</button>' : '');
-  $('ask-chips').querySelectorAll('[data-q]').forEach(b => b.onclick = () => ask(b.dataset.q));
-  if ($('more-ask')) $('more-ask').onclick = () => { askFrom += 3; renderAskChips(); };
-}
-
-function modeColumn(key) {
-  // Шаги — во всю ширину, ниже слева ответ с источниками и цитатами, справа — чанки, откуда он.
-  return `<div class="mode" id="mode-${key}">
-    <div class="flow long">${Object.entries(FLOWS[key]).map(([s, title]) =>
-      `<div class="step" data-step="${s}"><b>${title}</b><span>&nbsp;</span></div>`).join('<div class="arrow">→</div>')}</div>
-    <div class="rewrite" hidden></div>
-    <div class="evidence">
-      <div>
-        <div class="answer"></div>
-        <div class="srcs"></div>
-        <div class="answer-meta"></div>
-        <details class="how" data-box="prompt" hidden><summary></summary><pre class="meta"></pre></details>
-        <details class="how" data-box="think" hidden><summary></summary><div class="think"></div></details>
-      </div>
-      <div class="sources"></div>
-    </div>
-  </div>`;
-}
-
-function setStep(key, step, status, note) {
-  const el = document.querySelector(`#mode-${key} [data-step="${step}"]`);
-  el.className = 'step ' + status;
-  el.querySelector('span').textContent = note;
-}
-
-function tick() {
-  // Секунды на идущем шаге: модель переписывает вопрос, реранкер читает пары, модель думает или пишет.
-  const doing = {rewrite: ['rewrite', 'модель пишет'], rerank: ['rerank', 'читает пары'],
-                 think: ['model', 'думает'], text: ['model', 'пишет']};
-  for (const [key, st] of Object.entries(asking || {})) {
-    if (!doing[st.phase]) continue;
-    let [step, what] = doing[st.phase];
-    const sec = dur((Date.now() - st.t0) / 1000);
-    if (st.phase === 'rerank' && S && !S.rerank.loaded) what = 'загружаю модель';
-    setStep(key, step, 'run', `${what} · ${sec}`);
-    if (st.phase === 'think') $('mode-' + key).querySelector('.answer').innerHTML = `<span class="muted">модель думает… ${sec}</span>`;
-  }
-}
-
-function fail(key, message) {
-  const col = $('mode-' + key);
-  const running = col.querySelector('.step.run');
-  if (running) setStep(key, running.dataset.step, 'error', 'ошибка');
-  const a = col.querySelector('.answer');
-  a.className = 'answer failed';
-  a.textContent = message;
-  asking[key].phase = 'error';
-}
-
-function onAsk(e) {
-  const key = e.mode, st = asking[key], col = $('mode-' + key);
-  // В пяти шагах второго этапа карточки узкие — подписи короче.
-  if (e.type === 'rewrite') {
-    st.rewrite = e;
-    setStep(key, 'rewrite', 'done', e.cached ? 'из кэша' : `${fmt(e.tokens)} ток. · ${Math.round(e.seconds)} с`);
-    setStep(key, 'search', 'run', 'ищу…');
-    const box = col.querySelector('.rewrite');
-    box.hidden = false;
-    box.innerHTML = `<span class="label">переписано для реранкера</span> <q>${esc(e.text)}</q>`;
-    st.phase = 'search';
-  } else if (e.type === 'candidates') {
-    setStep(key, 'search', 'done', nw(e.count, ...W.chunks));
-    Object.assign(st, {phase: 'rerank', t0: Date.now()});
-    tick();
-  } else if (e.type === 'sources') {
-    Object.assign(st, {hits: e.hits, dropped: e.dropped, settings: e.settings, phase: 'wait'});
-    setStep(key, 'rerank', 'done', `${e.hits.length} из ${e.hits.length + e.dropped.length} · ` +
-                                   (e.seconds < 0.1 ? 'кэш' : `${Math.round(e.seconds)} с`));
-    col.querySelector('.sources').innerHTML = sourcesHtml(e.hits, '', e.dropped, e.settings, []);
-  } else if (e.type === 'prompt') {
-    const chars = e.messages.reduce((a, m) => a + m.content.length, 0);
-    setStep(key, 'prompt', 'done', nw(st.hits.length, ...W.chunks));
-    const box = col.querySelector('[data-box="prompt"]');
-    box.hidden = false;
-    box.querySelector('summary').textContent = `Что ушло модели · ${nw(chars, ...W.chars)}`;
-    box.querySelector('pre').textContent = e.messages.map(m => `${m.role}:\n${m.content}`).join('\n\n');
-    Object.assign(st, {phase: 'think', t0: Date.now()});
-    tick();
-  } else if (e.type === 'think') {
-    st.think += e.text;
-  } else if (e.type === 'text') {
-    // Модель пишет JSON — на экран он попадёт разобранным, когда ответ придёт целиком.
-    if (st.phase !== 'text') col.querySelector('.answer').innerHTML = '<span class="muted">модель пишет ответ…</span>';
-    st.phase = 'text';
-    st.text += e.text;
-  } else if (e.type === 'done') {
-    st.phase = 'done';
-    const a = col.querySelector('.answer'), got = {...e, dropped: st.dropped, settings: st.settings};
-    a.className = 'answer final' + (e.unknown ? ' unknown' : '');
-    a.innerHTML = answerBody(got);
-    col.querySelector('.srcs').innerHTML = e.unknown ? '' : quotesHtml(got, st.hits);
-    const rewrite = st.rewrite && !st.rewrite.cached ? ` · переписывание — ${nw(st.rewrite.tokens, ...W.tokens)}` : '';
-    if (e.skipped) {                // порог не прошёл ни один чанк — ответ без модели
-      setStep(key, 'prompt', 'skip', 'не нужен');
-      setStep(key, 'model', 'skip', 'не звали');
-      col.querySelector('.answer-meta').textContent = 'ответ без модели: 0 токенов' + rewrite;
-    } else {
-      setStep(key, 'model', 'done', `ответ за ${dur(e.seconds)}`);
-      col.querySelector('.answer-meta').textContent = usageLine(e.usage, e.seconds) + rewrite;
-    }
-    if (st.think) {
-      const box = col.querySelector('[data-box="think"]');
-      box.hidden = false;
-      box.querySelector('summary').textContent = `Ход мысли модели · ${nw(st.think.length, ...W.chars)}`;
-      box.querySelector('.think').textContent = st.think;
-    }
-    col.querySelector('.sources').innerHTML = sourcesHtml(st.hits, e.answer, st.dropped, st.settings, e.quotes);
-  } else if (e.type === 'error') {
-    fail(key, e.text);
-  }
 }
 
 async function readLines(response, onEvent) {
@@ -1057,31 +1014,348 @@ async function readLines(response, onEvent) {
   }
 }
 
-async function ask(question) {
-  question = question.trim();
-  if (!question || asking || askBlocked()) return;
-  $('ask').value = question;
-  $('modes').innerHTML = LIVE.map(modeColumn).join('');
-  asking = {};
-  for (const key of LIVE) asking[key] = {phase: 'rewrite', text: '', think: '', hits: null, t0: Date.now()};
-  renderAskNote();
-  const timer = setInterval(tick, 250);
-  try {
-    const r = await fetch('/api/ask', {method: 'POST', headers: {'Content-Type': 'application/json'},
-                                       body: JSON.stringify({question})});
-    if (!r.ok) {
-      const data = await r.json().catch(() => ({}));
-      throw new Error(data.detail || `ошибка ${r.status}`);
-    }
-    await readLines(r, onAsk);
-  } catch (e) {
-    for (const key of LIVE) if (asking[key].phase !== 'done') fail(key, e.message);
-  } finally {
-    clearInterval(timer);
-    asking = null;
-    renderAskNote();
+const STARTERS = [
+  'Летом едем на дачу с детьми и прицепом — что по правилам нужно учесть?',
+  'Я только получил права — какие ограничения действуют для начинающих?',
+  'Хочу ездить на работу на электросамокате — где и как можно ехать?',
+];
+const CHAT_STEPS = ['Память', 'Поиск', 'Реранкер', 'Модель'];
+const EMPTY_MEMORY = {goal: '', clarified: [], constraints: []};
+const exchanges = n => nw(n, 'обмен', 'обмена', 'обменов');
+const chatTitle = c => c.memory.goal || c.first || 'Новый диалог';
+const sourced = t => t.quotes.some(q => q.found);
+const windowSize = () => H ? H.window : 3;
+
+function renderChatSide() {
+  if (!H) return;
+  const mine = H.chats.filter(c => !c.scenario);
+  $('chat-list').innerHTML = mine.length ? mine.map(c => `
+    <div class="chat-item ${c.id === chatId ? 'active' : ''}" data-chat="${c.id}">
+      <div class="t">${esc(chatTitle(c))}</div>
+      <div class="m"><span>${exchanges(c.turns)} · ${when(c.updated)}</span>
+        <button class="x" data-del="${c.id}" title="удалить диалог">✕</button></div>
+    </div>`).join('') : '<div class="empty">Своих диалогов пока нет.</div>';
+  $('scenario-list').innerHTML = H.scenarios.map(s => {
+    const m = s.summary;
+    const status = !m.done ? `${m.steps} сообщений · не прогоняли` : m.done < m.steps ? `сделано ${m.done} из ${m.steps}`
+      : `прогнан · цель удержана ${m.goal} из ${m.done}`;
+    return `<div class="chat-item ${s.chat_id && s.chat_id === chatId ? 'active' : ''}" ${s.chat_id ? `data-chat="${s.chat_id}"` : ''}>
+      <div class="t">${esc(s.title)}</div><div class="m"><span>${status}</span></div></div>`;
+  }).join('');
+}
+
+function renderScenarioHead() {
+  // Платная кнопка — с ценой рядом; во время прогона та же кнопка его останавливает.
+  if (!H || !S) return;
+  const st = S.chat, b = $('scenario-run'), going = st.running, price = $('scenario-price');
+  const todo = H.scenarios.reduce((a, s) => a + s.todo, 0), started = H.scenarios.some(s => s.summary.done);
+  const calls = todo || H.scenarios.reduce((a, s) => a + s.todo_fresh, 0);
+  const measured = H.scenarios.filter(s => s.summary.done).map(s => s.summary.tokens);
+  const per = measured.length ? measured.reduce((a, x) => a + x, 0) / measured.length : 4600;   // замер хода на пробе
+  b.disabled = going ? st.stopping : !!askBlocked();
+  b.textContent = going ? (st.stopping ? 'Останавливаю…' : `Остановить · ${st.done} из ${st.total || '…'}`)
+    : `${!todo ? 'Прогнать заново' : started ? 'Продолжить' : 'Прогнать'} · ${nw(calls, 'ответ', 'ответа', 'ответов')}`;
+  price.style.color = '';
+  if (going) {
+    price.textContent = 'ходы появляются в диалогах сценариев';
+  } else if (st.error) {
+    price.textContent = 'Прогон остановился: ' + st.error;
+    price.style.color = 'var(--bad)';
+  } else {
+    price.textContent = `≈ ${fmt(Math.round(calls * per / 1000))} тыс. токенов, ~20 мин` + (st.stopped ? ' · был остановлен' : '');
   }
 }
+
+function renderComposer() {
+  const blocked = askBlocked(), frozen = CV && CV.scenario && S && S.chat.running;
+  $('chat-send').disabled = !!blocked || !!live || !!frozen;
+  $('chat-send').textContent = live ? 'Отвечает…' : 'Отправить';
+  $('chat-note').textContent = blocked && blocked !== 'Загружаю…' ? blocked
+    : frozen ? 'Идёт прогон сценариев — писать в этот диалог можно будет, когда он кончится.' : '';
+  $('chat-note').style.color = blocked ? 'var(--bad)' : '';
+}
+
+function renderMemory() {
+  // Память задачи сейчас: во время ответа — уже обновлённая сообщением, жёлтым — что оно добавило.
+  const now = live && CV && live.chat === CV.id && live.understand;
+  const m = now ? live.understand.memory : CV ? CV.memory : EMPTY_MEMORY, turns = CV ? CV.turns : [];
+  const ch = now ? live.understand.changes : turns.length ? turns[turns.length - 1].changes : null;
+  const editable = !!CV && !live && !(CV.scenario && S && S.chat.running);
+  const fresh = new Set(ch ? [...ch.clarified.added, ...ch.constraints.added] : []);
+  const gone = ch ? [...ch.clarified.removed, ...ch.constraints.removed] : [];
+  const items = field => m[field].map((x, i) => `<div class="mem-item ${fresh.has(x) ? 'fresh' : ''}"><span>${esc(x)}</span>${
+    editable ? `<button class="x" data-field="${field}" data-i="${i}" title="убрать из памяти">✕</button>` : ''}</div>`).join('')
+    || '<div class="empty">—</div>';
+  const note = `<div class="mem-note">Модель видит эту память и ${exchanges(windowSize())}.${fresh.size ? ' Жёлтым — новое.' : ''}${
+    editable ? ' Лишнее — ✕.' : ''}</div>`;
+  $('memory').innerHTML = !m.goal && !m.clarified.length && !m.constraints.length
+    ? `<div class="empty" style="margin-top:10px">Пусто — заполнится после первого сообщения.</div>` + note
+    : `<div class="mem-block"><span class="label">Цель</span><div class="mem-goal ${ch && ch.goal ? 'fresh' : ''}">${esc(m.goal || '—')}</div></div>
+       <div class="mem-block"><span class="label">Что вы уточнили</span>${items('clarified')}</div>
+       <div class="mem-block"><span class="label">Условия и термины</span>${items('constraints')}</div>
+       ${gone.length ? `<div class="mem-block"><span class="label">Убрано последним сообщением</span>${
+         gone.map(x => `<div class="mem-gone">${esc(x)}</div>`).join('')}</div>` : ''}` + note;
+}
+
+function memDiff(ch) {
+  // Что сообщение добавило в память и что убрало — под ним, мелко.
+  if (!ch) return '';
+  const parts = [...[...ch.clarified.added, ...ch.constraints.added].map(x => `<span class="add">${esc(x)}</span>`),
+                 ...[...ch.clarified.removed, ...ch.constraints.removed].map(x => `<span class="del">${esc(x)}</span>`)];
+  return parts.length ? `<div class="mem-diff">запомнил: ${parts.join(' · ')}</div>` : '';
+}
+
+function turnSources(t) {
+  // Источник — всегда под ответом одной строкой; цитаты — по щелчку.
+  if (t.unknown) return '';
+  if (!t.quotes.length) return '<div class="check bad">✗ ответ без источника</div>';
+  const labels = [...new Set(t.quotes.map(q => q.found ? q.label : 'цитаты нет в найденном'))];
+  return `<details class="src-line" data-box="${t.n}-src"><summary>Источник: ${labels.map(l => `<b>${esc(l)}</b>`).join(', ')}</summary>
+    ${t.quotes.map((q, i) => `<div class="src-row ${q.found ? '' : 'bad'}"><span class="cite">${i + 1}</span> «${esc(q.text.trim())}»</div>`).join('')}
+  </details>`;
+}
+
+function howHtml(t) {
+  // Техническая изнанка хода: запрос, чанки, цена, что ушло модели.
+  const prompt = t.prompt ? `<details class="how" data-box="${t.n}-prompt"><summary>Что ушло модели</summary>
+      <pre class="meta">${esc(t.prompt.map(m => `${m.role}:\n${m.content}`).join('\n\n'))}</pre></details>` : '';
+  return `<details class="how" data-box="${t.n}-how"><summary>Как искали</summary>
+      <div class="search-info">Запрос с учётом диалога: «${esc(t.query)}»</div>
+      ${sourcesHtml(t.hits, t.answer, t.dropped, t.settings, t.quotes)}
+      <div class="answer-meta">${t.skipped ? 'модель не звали' : usageLine(t.usage, t.seconds)} · память — ${nw(t.understand.tokens, ...W.tokens)}</div>
+      ${prompt}</details>`;
+}
+
+function checkLine(t, row, facts) {
+  // Проверка хода сценария одной строкой: всё в порядке — галочка, иначе — что не так.
+  const m = row.memory, problems = [
+    ...(m.goal ? [] : ['цель потеряна']),
+    ...m.kept.filter(f => !f.ok).map(f => 'не запомнил: ' + f.text),
+    ...m.gone.filter(f => !f.ok).map(f => 'не забыл: ' + f.text),
+    ...(row.out ? (t.unknown ? [] : ['ответил, хотя в Правилах этого нет']) : sourced(t) ? [] : ['нет источника']),
+    ...facts.filter(f => !f.ok).map(f => 'не так: ' + f.text),
+  ];
+  return `<div class="check ${problems.length ? 'bad' : ''}" title="${esc(row.why)}">${
+    problems.length ? '✗ ' + esc(problems.join('; ')) : '✓ проверка пройдена'}</div>`;
+}
+
+function ablationHtml(row) {
+  // Тот же ход без памяти: модель видит только окно.
+  const a = row.ablation, bad = row.facts.filter((f, i) => !a.facts[i].ok);
+  return `<div class="ablation"><span class="label">без памяти агент ответил бы</span>
+    <div>${answerHtml(a.answer)}</div>
+    <div class="check ${bad.length ? 'bad' : ''}">${bad.length ? '✗ ' + esc(bad.map(f => f.text).join('; ')) : '✓ тоже верно'}
+      — сообщения № ${row.beyond.join(', ')} уже нет в окне</div></div>`;
+}
+
+function turnHtml(t, row) {
+  const facts = row ? row.facts.map((f, i) => ({...f, ...(t.facts || [])[i]})) : [];
+  return `<div class="turn" id="turn-${t.n}">
+    <div class="you"><div class="you-row"><span class="turn-n">${t.n}</span><div class="bubble">${esc(t.question)}</div></div>${memDiff(t.changes)}</div>
+    <div class="agent">
+      <div class="answer final ${t.unknown ? 'unknown' : ''}">${answerBody(t)}</div>
+      ${turnSources(t)}
+      ${row && row.memory ? checkLine(t, row, facts) : ''}
+      ${row && row.ablation ? ablationHtml(row) : ''}
+      ${howHtml(t)}
+    </div></div>`;
+}
+
+function scenarioSummary(m, rows) {
+  if (!m.done) return '<div class="verdict">Сценарий ещё не прогоняли — кнопка «Прогнать» слева внизу.</div>';
+  const key = rows.filter(r => r.ablation).map(r => `<a href="#turn-${r.n}" class="jump" data-n="${r.n}">№ ${r.n}</a>`).join(', ');
+  return `<div class="verdict">
+    <div>Цель удержана — <b>${m.goal} из ${m.done}</b> · ответов с источником — <b>${m.sourced} из ${m.said}</b> · верных — <b>${m.correct} из ${m.judged}</b></div>
+    ${m.beyond ? `<div style="margin-top:4px">Главное — ходы ${key}: ответ зависит от сказанного раньше окна. С памятью верно
+      <b>${m.beyond_with} из ${m.beyond}</b>, без памяти — <b>${m.beyond_without} из ${m.beyond}</b>.</div>` : ''}
+  </div>`;
+}
+
+function renderChat() {
+  const turns = CV ? CV.turns : [], rows = CV && CV.check ? CV.check : [], win = windowSize();
+  const mine = live && CV && live.chat === CV.id;
+  $('chat-title').textContent = !CV ? 'Новый диалог' : CV.scenario ? CV.title
+    : chatTitle({memory: CV.memory, first: turns[0] && turns[0].question});
+  $('chat-sub').textContent = turns.length ? exchanges(turns.length) : '';
+  $('chat-summary').innerHTML = CV && CV.summary ? scenarioSummary(CV.summary, rows) : '';
+  let html = '';
+  turns.forEach((t, i) => {
+    if (turns.length > win && i === turns.length - win)
+      html += `<div class="window-line">↓ модель видит ${exchanges(win)} ниже, остальное — только через память</div>`;
+    html += turnHtml(t, rows[i]);
+  });
+  if (!turns.length && !mine) html = `<div class="empty" style="margin-top:18px">Начните с цели, например:</div>
+    <div class="chips">${STARTERS.map(s => `<button class="chip" data-say="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+  if (mine) html += `<div class="turn" id="live"><div class="you"><div class="bubble">${esc(live.text)}</div></div>
+    <div class="agent" id="live-agent"></div></div>`;
+  if (lastError && CV && lastError.chat === CV.id) html += `<div class="answer failed" style="margin-top:16px">Не получилось:
+    ${esc(lastError.message)}. Сообщение вернулось в поле ввода — отправьте ещё раз.</div>`;
+  $('chat-turns').innerHTML = html;
+  $('chat-turns').querySelectorAll('details[data-box]').forEach(d => d.open = boxes.has(d.dataset.box));
+  renderLive();
+  renderMemory();
+  renderComposer();
+}
+
+function renderLive() {
+  // Ход, который идёт сейчас: четыре шага и секунды на текущем.
+  const box = $('live-agent');
+  if (!box || !live) return;
+  const L = live, u = L.understand, sec = t => dur((Date.now() - t) / 1000);
+  const at = L.done ? 4 : {understand: 0, search: 1, rerank: 2, wait: 3, think: 3, text: 3}[L.phase];
+  const skipped = L.sources && !L.sources.hits.length;
+  const notes = [
+    u ? `${fmt(u.understand.tokens)} ток. · ${dur(u.understand.seconds)}` : `модель пишет · ${sec(L.t0)}`,
+    L.candidates ? nw(L.candidates.count, ...W.chunks) : at === 1 ? 'ищу…' : '',
+    L.sources ? `${L.sources.hits.length} из ${L.sources.hits.length + L.sources.dropped.length}`
+      : at === 2 ? `${S && !S.rerank.loaded ? 'загружаю модель' : 'читает пары'} · ${sec(L.t1)}` : '',
+    skipped ? 'не звали' : L.phase === 'think' ? `думает · ${sec(L.t2)}` : L.phase === 'text' ? `пишет · ${sec(L.t2)}` : '',
+  ];
+  const steps = CHAT_STEPS.map((title, i) => {
+    const cls = L.error && i === at ? 'error' : skipped && i === 3 ? 'skip' : i < at ? 'done' : i === at ? 'run' : '';
+    return `<div class="step ${cls}"><b>${title}</b><span>${notes[i] || '&nbsp;'}</span></div>`;
+  }).join('<div class="arrow">→</div>');
+  const status = L.phase === 'understand' ? 'обновляю память задачи и переписываю сообщение с учётом диалога…'
+    : L.phase === 'think' ? `модель думает… ${sec(L.t2)}` : L.phase === 'text' ? 'модель пишет ответ…' : 'ищу пункты правил…';
+  box.innerHTML = `<div class="flow">${steps}</div>` +
+    (u ? `<div class="rewrite"><span class="label">ищу с учётом диалога</span> <q>${esc(u.query)}</q></div>` : '') +
+    `<div class="answer ${L.error ? 'failed' : ''}">${L.error ? esc(L.error) : `<span class="muted">${status}</span>`}</div>`;
+}
+
+function onChatEvent(e) {
+  if (!live) return;
+  if (e.type === 'understand') Object.assign(live, {understand: e, phase: 'search'});
+  else if (e.type === 'candidates') Object.assign(live, {candidates: e, phase: 'rerank', t1: Date.now()});
+  else if (e.type === 'sources') Object.assign(live, {sources: e, phase: 'wait'});
+  else if (e.type === 'prompt') Object.assign(live, {phase: 'think', t2: Date.now()});
+  else if (e.type === 'text') live.phase = 'text';
+  else if (e.type === 'done') live.done = e.turn;
+  else if (e.type === 'error') live.error = e.text;
+  if (e.type === 'understand') renderMemory();
+  renderLive();
+}
+
+async function send(text) {
+  text = text.trim();
+  if (!text || live || askBlocked() || (CV && CV.scenario && S && S.chat.running)) return;
+  lastError = null;
+  try {
+    if (!CV) {                                    // новый диалог появляется с первым сообщением
+      const {id} = await api('/api/chats', {});
+      chatId = id;
+      CV = {id, scenario: null, memory: {...EMPTY_MEMORY}, turns: []};
+    }
+  } catch (e) {
+    $('chat-note').textContent = 'Не получилось начать диалог: ' + e.message;
+    return;
+  }
+  $('chat-input').value = '';
+  live = {chat: CV.id, text, phase: 'understand', t0: Date.now()};
+  renderChat();
+  $('live').scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  const timer = setInterval(renderLive, 250);
+  try {
+    const r = await fetch(`/api/chats/${CV.id}/ask`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                     body: JSON.stringify({text})});
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `ошибка ${r.status}`);
+    await readLines(r, onChatEvent);
+    if (!live.done) throw new Error(live.error || 'ответ оборвался');
+  } catch (e) {
+    lastError = {chat: live.chat, message: e.message};
+    if (!$('chat-input').value) $('chat-input').value = text;
+  } finally {
+    clearInterval(timer);
+    const chat = live.chat;
+    live = null;
+    if (chatId === chat) CV = await api('/api/chats/' + chat).catch(() => CV);
+    H = await api('/api/chats').catch(() => H);
+    renderChatSide();
+    renderChat();
+    if (!lastError) scrollTo(0, document.body.scrollHeight);
+  }
+}
+
+async function openChat(id) {
+  // Свой диалог открывается на последнем сообщении, как в мессенджере; сценарий — сверху, с итогом проверки.
+  chatId = id;
+  lastError = null;
+  CV = await api('/api/chats/' + id).catch(() => null);
+  renderChatSide();
+  renderChat();
+  scrollTo(0, CV && !CV.scenario ? document.body.scrollHeight : 0);
+}
+
+document.querySelector('.chat-side').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    if (!confirm('Удалить диалог вместе с историей и памятью?')) return;
+    try {
+      await api('/api/chats/' + del.dataset.del, undefined, 'DELETE');
+      if (+del.dataset.del === chatId) { chatId = null; CV = null; }
+      H = await api('/api/chats');
+      renderChatSide();
+      renderChat();
+    } catch (err) {
+      $('chat-note').textContent = err.message;
+    }
+    return;
+  }
+  const item = e.target.closest('[data-chat]');
+  if (item) openChat(+item.dataset.chat);
+});
+$('chat-turns').addEventListener('click', e => {
+  const chip = e.target.closest('[data-say]');
+  if (chip) send(chip.dataset.say);
+});
+$('chat-summary').addEventListener('click', e => {
+  // Ссылка «№ 5» в итоге сценария — прокрутка к ходу.
+  const a = e.target.closest('.jump');
+  if (!a) return;
+  e.preventDefault();
+  $('turn-' + a.dataset.n).scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+$('chat-turns').addEventListener('toggle', e => {
+  const d = e.target;
+  if (d.dataset && d.dataset.box) d.open ? boxes.add(d.dataset.box) : boxes.delete(d.dataset.box);
+}, true);
+$('memory').addEventListener('click', async e => {
+  // Убрать запись из памяти: следующий ход начнётся без неё.
+  const x = e.target.closest('[data-field]');
+  if (!x || !CV) return;
+  const field = x.dataset.field;
+  const memory = {...CV.memory, [field]: CV.memory[field].filter((_, i) => i !== +x.dataset.i)};
+  try {
+    CV.memory = await api('/api/chats/' + CV.id, memory, 'PATCH');
+    renderMemory();
+  } catch (err) {
+    $('chat-note').textContent = 'Память не сохранилась: ' + err.message;
+  }
+});
+$('chat-new').onclick = () => {
+  chatId = null;
+  CV = null;
+  lastError = null;
+  renderChatSide();
+  renderChat();
+  $('chat-input').focus();
+};
+$('chat-send').onclick = () => send($('chat-input').value);
+$('chat-input').onkeydown = e => { if (e.key === 'Enter') send($('chat-input').value); };
+$('scenario-run').onclick = async () => {
+  try {
+    if (S && S.chat.running) {
+      S.chat = await api('/api/scenarios/stop', {});
+      renderScenarioHead();
+      return;
+    }
+    if (!H.scenarios.some(s => s.todo) && !confirm(`Прогнать оба сценария заново — ${$('scenario-price').textContent}?`)) return;
+    S.chat = await api('/api/scenarios/run', {});
+    renderScenarioHead();
+  } catch (e) {
+    $('scenario-price').textContent = e.message;
+    $('scenario-price').style.color = 'var(--bad)';
+  }
+};
 
 // ---------- контрольные вопросы ----------
 const correct = a => !!(a && a.facts && a.facts.length && a.facts.every(f => f.ok));
@@ -1561,8 +1835,6 @@ $('build').onclick = () => build(false);
 $('redownload').onclick = () => build(true);
 $('find').onclick = () => find({query: $('query').value});
 $('query').onkeydown = e => { if (e.key === 'Enter') find({query: $('query').value}); };
-$('ask-btn').onclick = () => ask($('ask').value);
-$('ask').onkeydown = e => { if (e.key === 'Enter') ask($('ask').value); };
 $('control-run').onclick = async () => {
   try {
     if (S && S.control.running) {
@@ -1587,7 +1859,7 @@ $('filter-run').onclick = async () => {
   }
 };
 
-showTab(pending ? 'index' : TABS[location.hash.slice(1)] ? location.hash.slice(1) : 'answers');
+showTab(pending ? 'index' : TABS[location.hash.slice(1)] ? location.hash.slice(1) : 'chat');
 poll();
 </script>
 </body>

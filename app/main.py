@@ -1,7 +1,8 @@
-"""HTTP: интерфейс и API. Логика — в pipeline, rag и rerank, здесь только склейка."""
+"""HTTP: интерфейс и API. Логика — в pipeline, rag, rerank и chat, здесь только склейка."""
 import asyncio
 import json
 import threading
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import chunking, config, corpus, index, pipeline, rag, rerank
+from . import chat, chunking, config, corpus, index, pipeline, rag, rerank
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -40,8 +41,14 @@ class Search(BaseModel):
     question_id: str | None = None
 
 
-class Ask(BaseModel):
-    question: str = ""
+class Say(BaseModel):
+    text: str = ""
+
+
+class Memory(BaseModel):
+    goal: str = ""
+    clarified: list[str] = []
+    constraints: list[str] = []
 
 
 class Settings(BaseModel):
@@ -58,7 +65,8 @@ def page():
 @app.get("/api/state")
 def state():
     """Лёгкое состояние для частого опроса: шаги пайплайна, прогоны проверок, ревизии."""
-    return {**pipeline.state(), "model_loaded": index.loaded(), "control": rag.state(), "rerank": rerank.state()}
+    return {**pipeline.state(), "model_loaded": index.loaded(), "control": rag.state(), "rerank": rerank.state(),
+            "chat": chat.state()}
 
 
 @app.get("/api/overview")
@@ -108,38 +116,93 @@ def _ready_for_answers() -> None:
         raise HTTPException(409, "Нет ключа модели: впишите DASHSCOPE_API_KEY в .env и перезапустите приложение")
 
 
-async def _live(question: str):
-    """Режимы живого вопроса (rag.LIVE), каждый в своём потоке: поиск, реранкер и HTTP-клиент
-    синхронные. События уходят строками JSON по мере прихода — шаги видны на глазах."""
+def _pump(events: Iterator[dict]):
+    """Ответ идёт в своём потоке — поиск, реранкер и HTTP-клиент синхронные — и доходит до конца,
+    даже если страницу закрыли: ход сохранится в истории. События уходят строками JSON по мере прихода."""
     loop, queue = asyncio.get_running_loop(), asyncio.Queue()
 
-    def work(mode: str) -> None:
+    def work() -> None:
         try:
-            for event in rag.answer(question, mode):
-                loop.call_soon_threadsafe(queue.put_nowait, {"mode": mode, **event})
-        except Exception as e:                              # причина — в колонке режима
-            loop.call_soon_threadsafe(queue.put_nowait, {"mode": mode, "type": "error", "text": str(e)})
+            for event in events:
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+        except Exception as e:                              # причина — в ответе на экране
+            loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "text": str(e)})
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
 
-    for mode in rag.LIVE:
-        threading.Thread(target=work, args=(mode,), daemon=True).start()
-    left = len(rag.LIVE)
-    while left:
-        event = await queue.get()
-        if event is None:
-            left -= 1
-        else:
+    threading.Thread(target=work, daemon=True).start()
+
+    async def lines():
+        while (event := await queue.get()) is not None:
             yield json.dumps(event, ensure_ascii=False) + "\n"
+    return lines()
 
 
-@app.post("/api/ask")
-async def ask(body: Ask):
-    """Вопрос агенту — поток событий (NDJSON)."""
-    if not body.question.strip():
-        raise HTTPException(400, "Пустой вопрос")
+@app.get("/api/chats")
+def chats():
+    """Список диалогов и сценарии проверки с итогом последнего прогона."""
+    return {"chats": chat.chats(), "scenarios": chat.overview(), "window": config.WINDOW,
+            "key": bool(config.DASHSCOPE_API_KEY)}
+
+
+@app.post("/api/chats")
+def chat_create():
+    return {"id": chat.create()}
+
+
+@app.get("/api/chats/{chat_id}")
+def chat_view(chat_id: int):
+    got = chat.view(chat_id)
+    if got is None:
+        raise HTTPException(404, "Такого диалога нет")
+    return got
+
+
+@app.delete("/api/chats/{chat_id}")
+def chat_delete(chat_id: int):
+    if not chat.claim(chat_id):
+        raise HTTPException(409, "В диалоге идёт ответ — дождитесь его")
+    chat.delete(chat_id)
+    chat.release(chat_id)
+    return {"ok": True}
+
+
+@app.patch("/api/chats/{chat_id}")
+def chat_memory(chat_id: int, body: Memory):
+    """Водитель поправил память задачи."""
+    if chat.load(chat_id) is None:
+        raise HTTPException(404, "Такого диалога нет")
+    return chat.set_memory(chat_id, body.model_dump())
+
+
+@app.post("/api/chats/{chat_id}/ask")
+async def chat_ask(chat_id: int, body: Say):
+    """Сообщение в диалог — поток событий (NDJSON): память, поиск, реранкер, промпт, модель, ход целиком."""
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "Пустое сообщение")
     _ready_for_answers()
-    return StreamingResponse(_live(body.question.strip()), media_type="application/x-ndjson")
+    if chat.load(chat_id) is None:
+        raise HTTPException(404, "Такого диалога нет")
+    if not chat.claim(chat_id):
+        raise HTTPException(409, "В этом диалоге уже идёт ответ")
+    return StreamingResponse(_pump(chat.ask(chat_id, text)), media_type="application/x-ndjson")
+
+
+@app.post("/api/scenarios/run")
+async def scenarios_run():
+    if chat.running():
+        raise HTTPException(409, "Прогон уже идёт")
+    _ready_for_answers()
+    threading.Thread(target=chat.run, daemon=True).start()
+    await asyncio.sleep(0.05)
+    return chat.state()
+
+
+@app.post("/api/scenarios/stop")
+def scenarios_stop():
+    chat.stop()
+    return chat.state()
 
 
 @app.get("/api/control")
